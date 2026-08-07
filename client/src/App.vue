@@ -1,60 +1,71 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { FileText, AlertCircle, CheckCircle2, ShieldCheck, X, Sun, Moon } from '@lucide/vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { FileText, AlertCircle, CheckCircle2, ShieldCheck, X, Sun, Moon, Keyboard } from '@lucide/vue';
 import type { Note, CreateNoteDto } from './types/note';
 import { getNotes, createNote, updateNote, deleteNote } from './services/api';
 import NoteList from './components/NoteList.vue';
 import NoteForm from './components/NoteForm.vue';
 import ConfirmModal from './components/ConfirmModal.vue';
 
-// note state
+// ─── note state ──────────────────────────────────────────────
 const notes = ref<Note[]>([]);
 const isLoading = ref(false);
 const isFormOpen = ref(false);
 const noteToEdit = ref<Note | null>(null);
 const isSubmittingForm = ref(false);
 
-// delete state
+// ─── delete state ─────────────────────────────────────────────
 const isDeleteModalOpen = ref(false);
 const noteToDelete = ref<Note | null>(null);
 const isDeleting = ref(false);
 
-// feedback state
+// ─── feedback state ───────────────────────────────────────────
 const connectionError = ref<string | null>(null);
 const formError = ref<string | null>(null);
 const toastMessage = ref<string | null>(null);
 const toastType = ref<'success' | 'error'>('success');
 
-// theme state
+// ─── agent + theme state ──────────────────────────────────────
+const agentStatus = ref<'idle' | 'syncing'>('idle');
 const isDark = ref(true);
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
+let agentTimer: ReturnType<typeof setTimeout> | null = null;
 
-// load persisted theme
-onMounted(() => {
-  const saved = localStorage.getItem('sudu_theme');
-  isDark.value = saved !== 'light';
-  applyTheme(isDark.value);
-  fetchNotes();
+// ─── breadcrumb ───────────────────────────────────────────────
+const breadcrumb = computed(() => {
+  if (isFormOpen.value) {
+    return ['System', 'Notes', noteToEdit.value ? 'Edit' : 'New'];
+  }
+  if (isDeleteModalOpen.value) return ['System', 'Notes', 'Delete'];
+  return ['System', 'Notes'];
 });
 
-// apply theme to root element
-function applyTheme(dark: boolean) {
-  if (dark) {
-    document.documentElement.classList.remove('light');
-  } else {
-    document.documentElement.classList.add('light');
-  }
+// ─── agent helpers ────────────────────────────────────────────
+function agentSync() {
+  if (agentTimer) clearTimeout(agentTimer);
+  agentStatus.value = 'syncing';
 }
 
-// toggle theme
+function agentIdle(delay = 1400) {
+  if (agentTimer) clearTimeout(agentTimer);
+  agentTimer = setTimeout(() => { agentStatus.value = 'idle'; }, delay);
+}
+
+// ─── theme ────────────────────────────────────────────────────
+function applyTheme(dark: boolean) {
+  dark
+    ? document.documentElement.classList.remove('light')
+    : document.documentElement.classList.add('light');
+}
+
 function toggleTheme() {
   isDark.value = !isDark.value;
   applyTheme(isDark.value);
   localStorage.setItem('sudu_theme', isDark.value ? 'dark' : 'light');
 }
 
-// show auto-dismiss toast
+// ─── toast ────────────────────────────────────────────────────
 function showToast(message: string, type: 'success' | 'error' = 'success') {
   if (toastTimer) clearTimeout(toastTimer);
   toastMessage.value = message;
@@ -67,7 +78,25 @@ function dismissToast() {
   toastMessage.value = null;
 }
 
-// fetch all notes
+// ─── keyboard shortcuts ───────────────────────────────────────
+function handleGlobalKeydown(e: KeyboardEvent) {
+  const mod = e.metaKey || e.ctrlKey;
+
+  // Ctrl/Cmd+N → new note (only when no modal is open)
+  if (mod && e.key === 'n' && !isFormOpen.value && !isDeleteModalOpen.value) {
+    e.preventDefault();
+    openCreateModal();
+    return;
+  }
+
+  // Escape → close any open modal
+  if (e.key === 'Escape') {
+    if (isFormOpen.value)        isFormOpen.value = false;
+    else if (isDeleteModalOpen.value) isDeleteModalOpen.value = false;
+  }
+}
+
+// ─── fetch ────────────────────────────────────────────────────
 async function fetchNotes() {
   isLoading.value = true;
   connectionError.value = null;
@@ -80,6 +109,7 @@ async function fetchNotes() {
   }
 }
 
+// ─── create (optimistic) ──────────────────────────────────────
 function openCreateModal() {
   noteToEdit.value = null;
   formError.value = null;
@@ -95,25 +125,69 @@ function openEditModal(note: Note) {
 async function handleFormSubmit(payload: CreateNoteDto) {
   isSubmittingForm.value = true;
   formError.value = null;
-  try {
-    if (noteToEdit.value) {
-      const updated = await updateNote(noteToEdit.value.id, payload);
-      const index = notes.value.findIndex((n) => n.id === updated.id);
-      if (index !== -1) notes.value[index] = updated;
-      showToast('Note updated');
-    } else {
-      const created = await createNote(payload);
-      notes.value.unshift(created);
-      showToast('Note created');
+  agentSync();
+
+  if (noteToEdit.value) {
+    // ── optimistic update ──
+    const targetId = noteToEdit.value.id;
+    const index = notes.value.findIndex((n) => n.id === targetId);
+    const original: Note | null = index !== -1 ? { ...notes.value[index] } as Note : null;
+
+    if (index !== -1) {
+      notes.value[index] = {
+        ...notes.value[index],
+        title: payload.title,
+        content: payload.content,
+        updated_at: new Date().toISOString(),
+      } as Note;
     }
+
     isFormOpen.value = false;
-  } catch (err: any) {
-    formError.value = err.message || 'Failed to save note';
-  } finally {
-    isSubmittingForm.value = false;
+
+    try {
+      const updated = await updateNote(targetId, payload);
+      const i = notes.value.findIndex((n) => n.id === updated.id);
+      if (i !== -1) notes.value[i] = updated;
+      showToast('Note updated');
+      agentIdle();
+    } catch (err: any) {
+      // revert
+      if (original && index !== -1) notes.value[index] = original;
+      showToast('Reverting...', 'error');
+      agentIdle(0);
+    }
+
+  } else {
+    // ── optimistic create ──
+    const tempId = `temp_${Date.now()}`;
+    const tempNote: Note = {
+      id: tempId,
+      title: payload.title,
+      content: payload.content,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    notes.value.unshift(tempNote);
+    isFormOpen.value = false;
+
+    try {
+      const created = await createNote(payload);
+      const i = notes.value.findIndex((n) => n.id === tempId);
+      if (i !== -1) notes.value[i] = created;
+      showToast('Note created');
+      agentIdle();
+    } catch (err: any) {
+      // revert
+      notes.value = notes.value.filter((n) => n.id !== tempId);
+      showToast('Reverting...', 'error');
+      agentIdle(0);
+    }
   }
+
+  isSubmittingForm.value = false;
 }
 
+// ─── delete (optimistic) ──────────────────────────────────────
 function openDeleteModal(note: Note) {
   noteToDelete.value = note;
   isDeleteModalOpen.value = true;
@@ -122,23 +196,44 @@ function openDeleteModal(note: Note) {
 async function handleConfirmDelete() {
   if (!noteToDelete.value) return;
   isDeleting.value = true;
+  agentSync();
+
+  const target: Note = { ...noteToDelete.value };
+  const targetIndex = notes.value.findIndex((n) => n.id === target.id);
+
+  // optimistic remove
+  notes.value = notes.value.filter((n) => n.id !== target.id);
+  isDeleteModalOpen.value = false;
+  noteToDelete.value = null;
+
   try {
-    await deleteNote(noteToDelete.value.id);
-    notes.value = notes.value.filter((n) => n.id !== noteToDelete.value?.id);
+    await deleteNote(target.id);
     showToast('Note deleted');
-    isDeleteModalOpen.value = false;
-    noteToDelete.value = null;
+    agentIdle();
   } catch (err: any) {
-    showToast(err.message || 'Failed to delete note', 'error');
-    isDeleteModalOpen.value = false;
+    // revert
+    if (targetIndex !== -1) notes.value.splice(targetIndex, 0, target);
+    showToast('Reverting...', 'error');
+    agentIdle(0);
   } finally {
     isDeleting.value = false;
   }
 }
 
-function dismissConnectionError() {
-  connectionError.value = null;
-}
+function dismissConnectionError() { connectionError.value = null; }
+
+// ─── lifecycle ────────────────────────────────────────────────
+onMounted(() => {
+  const saved = localStorage.getItem('sudu_theme');
+  isDark.value = saved !== 'light';
+  applyTheme(isDark.value);
+  document.addEventListener('keydown', handleGlobalKeydown);
+  fetchNotes();
+});
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleGlobalKeydown);
+});
 </script>
 
 <template>
@@ -165,17 +260,15 @@ function dismissConnectionError() {
             class="font-mono text-[11px] px-2.5 py-1 border transition-colors"
             style="border-color: #7f1d1d; color: #fca5a5;"
             @click="fetchNotes"
-          >
-            retry
-          </button>
-          <button class="transition-colors" style="color: #f87171;" @click="dismissConnectionError">
+          >retry</button>
+          <button style="color: #f87171;" @click="dismissConnectionError">
             <X class="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
     </Transition>
 
-    <!-- header -->
+    <!-- ─── header ─── -->
     <header
       class="sticky z-40 border-b"
       :style="{
@@ -186,7 +279,7 @@ function dismissConnectionError() {
       }"
     >
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
-        <!-- logo + title -->
+        <!-- logo -->
         <div class="flex items-center gap-3">
           <div
             class="p-1.5 border"
@@ -204,33 +297,23 @@ function dismissConnectionError() {
           </div>
         </div>
 
-        <!-- status badges + theme toggle -->
+        <!-- right badges -->
         <div class="flex items-center gap-2 font-mono text-[11px]">
-          <div
-            class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 border"
-            style="background: var(--bg-raised); border-color: var(--border);"
-          >
-            <span
-              class="relative flex h-1.5 w-1.5"
-            >
-              <span
-                class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                style="background: var(--accent);"
-              ></span>
-              <span
-                class="relative inline-flex rounded-full h-1.5 w-1.5"
-                style="background: var(--accent);"
-              ></span>
-            </span>
-            <ShieldCheck class="h-3 w-3" style="color: var(--accent);" />
-            <span style="color: var(--text-muted);">SQLite</span>
-          </div>
-
+          <!-- record count -->
           <div
             class="hidden sm:block px-2.5 py-1.5 border"
             style="background: var(--bg-raised); border-color: var(--border); color: var(--text-muted);"
           >
             {{ notes.length }} records
+          </div>
+
+          <!-- sqlite status -->
+          <div
+            class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 border"
+            style="background: var(--bg-raised); border-color: var(--border);"
+          >
+            <ShieldCheck class="h-3 w-3" style="color: var(--accent);" />
+            <span style="color: var(--text-muted);">SQLite</span>
           </div>
 
           <!-- theme toggle -->
@@ -245,9 +328,82 @@ function dismissConnectionError() {
           </button>
         </div>
       </div>
+
+      <!-- ─── system status strip ─── -->
+      <div
+        class="border-t px-4 sm:px-6 lg:px-8 py-1.5 flex items-center justify-between"
+        style="border-color: var(--border-subtle); background: var(--bg-raised);"
+      >
+        <!-- breadcrumb -->
+        <nav class="flex items-center gap-1 font-mono text-[10px]" aria-label="breadcrumb">
+          <template v-for="(crumb, i) in breadcrumb" :key="crumb">
+            <span
+              :style="i === breadcrumb.length - 1
+                ? 'color: var(--accent-light);'
+                : 'color: var(--text-muted);'"
+            >{{ crumb }}</span>
+            <span
+              v-if="i < breadcrumb.length - 1"
+              class="mx-1"
+              style="color: var(--text-muted); opacity: 0.4;"
+            >/</span>
+          </template>
+        </nav>
+
+        <!-- right side: agent status + keyboard hint -->
+        <div class="flex items-center gap-4">
+          <!-- keyboard shortcuts hint -->
+          <div class="hidden md:flex items-center gap-2.5 font-mono text-[10px]" style="color: var(--text-muted);">
+            <Keyboard class="h-3 w-3 shrink-0" />
+            <span class="opacity-60">
+              <kbd class="px-1 border rounded text-[9px]" style="border-color: var(--border);">Ctrl+N</kbd>
+              New ·
+              <kbd class="px-1 border rounded text-[9px]" style="border-color: var(--border);">Ctrl+↵</kbd>
+              Save ·
+              <kbd class="px-1 border rounded text-[9px]" style="border-color: var(--border);">Esc</kbd>
+              Close
+            </span>
+          </div>
+
+          <!-- agent status -->
+          <div class="flex items-center gap-1.5 font-mono text-[10px]">
+            <span class="relative flex h-1.5 w-1.5">
+              <span
+                v-if="agentStatus === 'syncing'"
+                class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                style="background: var(--accent);"
+              ></span>
+              <span
+                class="relative inline-flex rounded-full h-1.5 w-1.5 transition-colors duration-300"
+                :style="agentStatus === 'syncing'
+                  ? 'background: var(--accent);'
+                  : 'background: var(--text-muted); opacity: 0.5;'"
+              ></span>
+            </span>
+            <Transition
+              enter-active-class="transition-all duration-200"
+              enter-from-class="opacity-0 translate-x-1"
+              enter-to-class="opacity-100 translate-x-0"
+              leave-active-class="transition-all duration-200"
+              leave-from-class="opacity-100"
+              leave-to-class="opacity-0"
+              mode="out-in"
+            >
+              <span
+                :key="agentStatus"
+                :style="agentStatus === 'syncing'
+                  ? 'color: var(--accent-light);'
+                  : 'color: var(--text-muted);'"
+              >
+                {{ agentStatus === 'syncing' ? 'AI Syncing...' : 'AI Agent  ·  Idle' }}
+              </span>
+            </Transition>
+          </div>
+        </div>
+      </div>
     </header>
 
-    <!-- main -->
+    <!-- ─── main ─── -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 flex-1 w-full">
       <NoteList
         :notes="notes"
@@ -259,15 +415,15 @@ function dismissConnectionError() {
       />
     </main>
 
-    <!-- footer -->
+    <!-- ─── footer ─── -->
     <footer
       class="border-t py-3 text-center font-mono text-[11px]"
       style="background: var(--bg-surface); border-color: var(--border); color: var(--text-muted);"
     >
-      sudu.ai · full-stack pre-task · aakash pai
+      sudu.ai · file management system · aakash pai
     </footer>
 
-    <!-- modals -->
+    <!-- ─── modals ─── -->
     <NoteForm
       :is-open="isFormOpen"
       :note-to-edit="noteToEdit"
@@ -287,7 +443,7 @@ function dismissConnectionError() {
       @cancel="isDeleteModalOpen = false"
     />
 
-    <!-- bottom-right toast -->
+    <!-- ─── toast ─── -->
     <Transition
       enter-active-class="animate-slide-up-fade"
       leave-active-class="transition-all duration-150 ease-in"
@@ -306,10 +462,7 @@ function dismissConnectionError() {
         <CheckCircle2 v-if="toastType === 'success'" class="h-3.5 w-3.5 shrink-0" />
         <AlertCircle v-else class="h-3.5 w-3.5 shrink-0" />
         <span class="font-mono">{{ toastMessage }}</span>
-        <button
-          class="ml-1 opacity-60 hover:opacity-100 transition-opacity"
-          @click="dismissToast"
-        >
+        <button class="ml-1 opacity-60 hover:opacity-100 transition-opacity" @click="dismissToast">
           <X class="h-3 w-3" />
         </button>
       </div>

@@ -78,6 +78,14 @@ function handleSubmit() {
   if (!isValid.value || props.isSubmitting) return;
   emit('submit', { title: title.value.trim(), content: content.value.trim() });
 }
+
+// Ctrl/Cmd+Enter to submit from anywhere in the form
+function handleFormKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    handleSubmit();
+  }
+}
 </script>
 
 <template>
@@ -129,7 +137,7 @@ function handleSubmit() {
           // {{ serverError }}
         </div>
 
-        <form @submit.prevent="handleSubmit" class="px-6 py-4 space-y-5">
+        <form @submit.prevent="handleSubmit" @keydown="handleFormKeydown" class="px-6 py-4 space-y-5">
           <!-- title field -->
           <div>
             <div class="flex items-center justify-between pb-1.5">
