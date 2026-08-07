@@ -19,6 +19,14 @@ const emit = defineEmits<{
   (e: 'restore', note: Note): void;
 }>();
 
+// strip HTML tags for plain text summaries
+function stripHtml(htmlString: string): string {
+  if (!htmlString) return 'No content written';
+  // replace HTML tags with spaces and collapse whitespace
+  const raw = htmlString.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return raw || 'No content written';
+}
+
 // format timestamp
 function formatDate(isoString: string): string {
   try {
@@ -151,10 +159,10 @@ function getTagStyle(tag: string) {
 
       <!-- Title & Preview -->
       <h4 class="text-sm font-semibold truncate max-w-[200px]" style="color: var(--text-primary);">
-        {{ note.title }}
+        {{ note.title || 'Untitled Note' }}
       </h4>
       <p class="hidden md:block text-xs truncate flex-1" style="color: var(--text-secondary);">
-        {{ note.content }}
+        {{ stripHtml(note.content) }}
       </p>
     </div>
 
@@ -280,7 +288,7 @@ function getTagStyle(tag: string) {
           </span>
         </div>
         <p class="preview-text text-xs leading-relaxed flex-1" style="color: var(--text-secondary);">
-          {{ note.content }}
+          {{ stripHtml(note.content) }}
         </p>
       </div>
     </div>
@@ -291,7 +299,7 @@ function getTagStyle(tag: string) {
         <FileText class="w-4 h-4" style="color: var(--accent);" />
       </div>
       <div class="card-text-details">
-        <div class="card-title truncate" :title="note.title">{{ note.title }}</div>
+        <div class="card-title truncate" :title="note.title || 'Untitled Note'">{{ note.title || 'Untitled Note' }}</div>
         <div class="card-subtitle">
           <span class="edited-time">{{ formatDate(note.updated_at) }}</span>
           <span class="created-time">Created: {{ formatDate(note.created_at) }}</span>
