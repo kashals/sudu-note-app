@@ -23,31 +23,32 @@ const emit = defineEmits<{
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
     @click.self="emit('cancel')"
   >
-    <div
-      class="w-full max-w-md border border-zinc-800 bg-zinc-900 p-6 shadow-2xl transition-all"
-    >
-      <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
-        <div class="flex items-center gap-2">
-          <AlertTriangle class="h-5 w-5 text-red-400" />
-          <h3 class="text-base font-semibold text-zinc-100">{{ title }}</h3>
+    <div class="w-full max-w-md border border-zinc-800 bg-zinc-900">
+      <!-- modal header -->
+      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
+        <div class="flex items-center gap-2.5">
+          <AlertTriangle class="h-4 w-4 text-red-500 shrink-0" />
+          <h3 class="text-sm font-semibold text-zinc-100">{{ title }}</h3>
         </div>
         <button
           type="button"
-          class="text-zinc-400 hover:text-zinc-100"
+          class="text-zinc-600 hover:text-zinc-300 transition-colors"
           @click="emit('cancel')"
         >
           <X class="h-4 w-4" />
         </button>
       </div>
 
-      <div class="py-4 text-sm text-zinc-300">
-        <p>{{ message }}</p>
+      <!-- message body -->
+      <div class="px-5 py-4 text-xs text-zinc-400 leading-relaxed">
+        {{ message }}
       </div>
 
-      <div class="flex items-center justify-end gap-3 pt-2">
+      <!-- action row -->
+      <div class="flex items-center justify-end gap-2 border-t border-zinc-800 px-5 py-4">
         <button
           type="button"
-          class="border border-zinc-700 bg-zinc-800 px-4 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
+          class="border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-40 transition-colors"
           :disabled="isProcessing"
           @click="emit('cancel')"
         >
@@ -55,11 +56,11 @@ const emit = defineEmits<{
         </button>
         <button
           type="button"
-          class="border border-red-600 bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          class="border border-red-900 bg-red-950/20 px-4 py-2 text-xs font-medium text-red-400 hover:border-red-700 hover:bg-red-950/40 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           :disabled="isProcessing"
           @click="emit('confirm')"
         >
-          <span v-if="isProcessing">processing...</span>
+          <span v-if="isProcessing" class="font-mono">processing...</span>
           <span v-else>{{ confirmLabel || 'delete' }}</span>
         </button>
       </div>

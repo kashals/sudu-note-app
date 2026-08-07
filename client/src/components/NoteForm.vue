@@ -27,7 +27,7 @@ const touchedContent = ref(false);
 const maxTitleLength = 200;
 const maxContentLength = 10000;
 
-// populate form when editing
+// populate form on edit
 watch(
   () => props.noteToEdit,
   (newNote) => {
@@ -43,6 +43,13 @@ watch(
   },
   { immediate: true }
 );
+
+// word count helper
+function countWords(str: string): number {
+  const trimmed = str.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).length;
+}
 
 // title validation
 const titleError = computed(() => {
@@ -60,7 +67,7 @@ const contentError = computed(() => {
   return null;
 });
 
-// check if form is valid
+// form validity
 const isValid = computed(() => {
   return (
     title.value.trim().length > 0 &&
@@ -70,7 +77,10 @@ const isValid = computed(() => {
   );
 });
 
-// handle form submission
+// content word count
+const contentWordCount = computed(() => countWords(content.value));
+
+// handle submit
 function handleSubmit() {
   touchedTitle.value = true;
   touchedContent.value = true;
@@ -90,38 +100,40 @@ function handleSubmit() {
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
     @click.self="emit('cancel')"
   >
-    <div
-      class="w-full max-w-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl transition-all"
-    >
-      <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
-        <h3 class="text-base font-semibold text-zinc-100">
-          {{ noteToEdit ? 'edit note' : 'create new note' }}
+    <div class="w-full max-w-2xl border border-zinc-800 bg-zinc-900">
+      <!-- modal header -->
+      <div class="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
+        <h3 class="text-sm font-semibold text-zinc-100 tracking-wide">
+          {{ noteToEdit ? 'edit note' : 'create note' }}
         </h3>
         <button
           type="button"
-          class="text-zinc-400 hover:text-zinc-100"
+          class="text-zinc-500 hover:text-zinc-100 transition-colors"
           @click="emit('cancel')"
         >
           <X class="h-4 w-4" />
         </button>
       </div>
 
-      <!-- error message banner -->
+      <!-- server error banner -->
       <div
         v-if="serverError"
-        class="mt-4 border border-red-800 bg-red-950/40 p-3 text-xs text-red-300"
+        class="mx-6 mt-4 border border-red-900 bg-red-950/30 px-3 py-2 text-xs text-red-400 font-mono"
       >
-        {{ serverError }}
+        // {{ serverError }}
       </div>
 
-      <form @submit.prevent="handleSubmit" class="mt-4 space-y-4">
+      <form @submit.prevent="handleSubmit" class="px-6 py-4 space-y-5">
         <!-- title field -->
         <div>
-          <div class="flex items-center justify-between pb-1">
-            <label for="note-title" class="text-xs font-medium text-zinc-300">
-              title <span class="text-red-400">*</span>
+          <div class="flex items-center justify-between pb-1.5">
+            <label for="note-title" class="text-xs font-medium text-zinc-400 tracking-wide">
+              title <span class="text-red-500">*</span>
             </label>
-            <span class="text-[10px] text-zinc-500">
+            <span
+              class="font-mono text-[10px]"
+              :class="title.length > maxTitleLength ? 'text-red-400' : 'text-zinc-600'"
+            >
               {{ title.length }}/{{ maxTitleLength }}
             </span>
           </div>
@@ -130,36 +142,39 @@ function handleSubmit() {
             v-model="title"
             type="text"
             placeholder="enter note title"
-            class="w-full border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
-            :class="{ 'border-red-500': titleError }"
+            class="w-full border bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-700 focus:outline-none transition-colors"
+            :class="titleError ? 'border-red-800 focus:border-red-600' : 'border-zinc-800 focus:border-zinc-600'"
             @blur="touchedTitle = true"
           />
-          <p v-if="titleError" class="mt-1 text-[11px] text-red-400">
-            {{ titleError }}
+          <p v-if="titleError" class="mt-1 font-mono text-[11px] text-red-400">
+            // {{ titleError }}
           </p>
         </div>
 
         <!-- content field -->
         <div>
-          <div class="flex items-center justify-between pb-1">
-            <label for="note-content" class="text-xs font-medium text-zinc-300">
-              content <span class="text-red-400">*</span>
+          <div class="flex items-center justify-between pb-1.5">
+            <label for="note-content" class="text-xs font-medium text-zinc-400 tracking-wide">
+              content <span class="text-red-500">*</span>
             </label>
-            <span class="text-[10px] text-zinc-500">
-              {{ content.length }}/{{ maxContentLength }}
+            <span
+              class="font-mono text-[10px]"
+              :class="content.length > maxContentLength ? 'text-red-400' : 'text-zinc-600'"
+            >
+              {{ contentWordCount }} words · {{ content.length }}/{{ maxContentLength }}
             </span>
           </div>
           <textarea
             id="note-content"
             v-model="content"
-            rows="8"
+            rows="9"
             placeholder="enter note content..."
-            class="w-full resize-y border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
-            :class="{ 'border-red-500': contentError }"
+            class="w-full resize-y border bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-700 focus:outline-none transition-colors leading-relaxed"
+            :class="contentError ? 'border-red-800 focus:border-red-600' : 'border-zinc-800 focus:border-zinc-600'"
             @blur="touchedContent = true"
           ></textarea>
-          <p v-if="contentError" class="mt-1 text-[11px] text-red-400">
-            {{ contentError }}
+          <p v-if="contentError" class="mt-1 font-mono text-[11px] text-red-400">
+            // {{ contentError }}
           </p>
         </div>
 
@@ -167,7 +182,7 @@ function handleSubmit() {
         <div class="flex items-center justify-end gap-3 border-t border-zinc-800 pt-4">
           <button
             type="button"
-            class="border border-zinc-700 bg-zinc-800 px-4 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
+            class="border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-colors disabled:opacity-40"
             :disabled="isSubmitting"
             @click="emit('cancel')"
           >
@@ -175,7 +190,7 @@ function handleSubmit() {
           </button>
           <button
             type="submit"
-            class="flex items-center gap-2 border border-zinc-100 bg-zinc-100 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-50"
+            class="flex items-center gap-2 border border-zinc-100 bg-zinc-100 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             :disabled="!isValid || isSubmitting"
           >
             <Check class="h-3.5 w-3.5" />
