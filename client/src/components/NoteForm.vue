@@ -196,7 +196,19 @@ function updateActiveFormats() {
 
 // Rich Text Formatting execution
 function format(command: string, value: string = '') {
-  document.execCommand(command, false, value);
+  // For block-level formats (headings, blockquote), toggle back to 'p' if already active
+  if (command === 'formatBlock') {
+    const currentBlock = document.queryCommandValue('formatBlock').toLowerCase();
+    const target = value.toLowerCase();
+    if (currentBlock === target) {
+      // Toggle off: revert to paragraph
+      document.execCommand('formatBlock', false, 'p');
+    } else {
+      document.execCommand('formatBlock', false, value);
+    }
+  } else {
+    document.execCommand(command, false, value || undefined);
+  }
   if (editorRef.value) {
     editorRef.value.focus();
     content.value = editorRef.value.innerHTML;
@@ -204,10 +216,51 @@ function format(command: string, value: string = '') {
   }
 }
 
-// Checkbox item creation
+// Checkbox item creation — inserts a todo-item and keeps cursor on the same line
 function insertCheckbox() {
-  const html = `<div class="todo-item" style="display: flex; align-items: center; gap: 8px; margin: 4px 0;"><input type="checkbox" style="width: 14px; height: 14px; cursor: pointer; border-radius: 4px;">&nbsp;<span style="outline: none;" contenteditable="true">Task</span></div>`;
-  format('insertHTML', html);
+  if (!editorRef.value) return;
+  editorRef.value.focus();
+
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+
+  // Build the todo wrapper
+  const wrapper = document.createElement('div');
+  wrapper.className = 'todo-item';
+  wrapper.setAttribute('data-todo', 'true');
+  wrapper.style.cssText = 'display: flex; align-items: center; gap: 8px; margin: 4px 0;';
+
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.style.cssText = 'width: 14px; height: 14px; cursor: pointer; border-radius: 4px; flex-shrink: 0;';
+
+  // Zero-width space anchors the caret inside the empty span reliably
+  const ZWSP = '\u200b';
+  const label = document.createElement('span');
+  label.setAttribute('contenteditable', 'true');
+  label.setAttribute('data-todo-label', 'true');
+  label.style.cssText = 'outline: none; flex: 1;';
+  label.textContent = ZWSP;
+
+  wrapper.appendChild(checkbox);
+  wrapper.appendChild(label);
+
+  // Only insert the wrapper — NO afterPara yet; it's created on Enter
+  range.insertNode(wrapper);
+
+  // Place cursor at the start of the label (after the zero-width space anchor)
+  const newRange = document.createRange();
+  const textNode = label.firstChild!;
+  newRange.setStart(textNode, 1); // position after the ZWSP
+  newRange.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+
+  content.value = editorRef.value.innerHTML;
+  updateActiveFormats();
 }
 
 // Handle key inputs in rich text div
@@ -230,7 +283,83 @@ function handleEditorKeydown(e: KeyboardEvent) {
       }
     }, 10);
   }
-  
+
+  // ── Backspace inside a todo-item: delete the whole row in one keystroke ──
+  if (e.key === 'Backspace') {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && sel.isCollapsed) {
+      let node: Node | null = sel.getRangeAt(0).startContainer;
+      let todoWrapper: HTMLElement | null = null;
+      while (node && node !== editorRef.value) {
+        if (node instanceof HTMLElement && node.dataset.todo === 'true') {
+          todoWrapper = node;
+          break;
+        }
+        node = node.parentNode;
+      }
+
+      if (todoWrapper) {
+        // Find the label span's actual text content (strip ZWSP)
+        const labelEl = todoWrapper.querySelector('[data-todo-label]') as HTMLElement | null;
+        const rawText = labelEl?.textContent?.replace(/\u200b/g, '') ?? '';
+        const range = sel.getRangeAt(0);
+
+        // Only intercept when: label is empty, OR cursor is at the very beginning of it
+        const atStart = range.startOffset <= 1 && (range.startContainer === labelEl || range.startContainer === labelEl?.firstChild);
+        if (rawText === '' || atStart) {
+          e.preventDefault();
+          // Place cursor on the previous sibling (or start of editor) before removing
+          const prev = todoWrapper.previousSibling;
+          todoWrapper.parentNode?.removeChild(todoWrapper);
+
+          if (prev) {
+            const newRange = document.createRange();
+            newRange.selectNodeContents(prev);
+            newRange.collapse(false); // collapse to end
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+          }
+          if (editorRef.value) content.value = editorRef.value.innerHTML;
+          return;
+        }
+      }
+    }
+  }
+
+  // ── Enter inside a todo-item label: exit to paragraph after the wrapper ──
+  if (e.key === 'Enter' && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      let node: Node | null = sel.getRangeAt(0).startContainer;
+      let todoWrapper: HTMLElement | null = null;
+      while (node && node !== editorRef.value) {
+        if (node instanceof HTMLElement && node.dataset.todo === 'true') {
+          todoWrapper = node;
+          break;
+        }
+        node = node.parentNode;
+      }
+
+      if (todoWrapper) {
+        e.preventDefault();
+        let after = todoWrapper.nextSibling;
+        if (!after || (after instanceof HTMLElement && after.dataset.todo === 'true')) {
+          const p = document.createElement('p');
+          p.innerHTML = '<br>';
+          todoWrapper.parentNode?.insertBefore(p, todoWrapper.nextSibling ?? null);
+          after = p;
+        }
+        const range = document.createRange();
+        range.setStart(after, 0);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        if (editorRef.value) content.value = editorRef.value.innerHTML;
+        return;
+      }
+    }
+  }
+
   // Ctrl+Enter to submit
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
     e.preventDefault();
