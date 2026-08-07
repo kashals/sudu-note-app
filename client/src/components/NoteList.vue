@@ -128,7 +128,7 @@ function staggerClass(index: number): string {
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <!-- search (ErzenXz inspired high fidelity design) -->
       <div class="relative flex-1 max-w-sm">
-        <Search class="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--text-muted);" />
+        <Search class="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 z-10" style="color: var(--text-muted);" />
         <input
           v-model="searchInput"
           type="text"
@@ -139,7 +139,7 @@ function staggerClass(index: number): string {
         <button
           v-if="searchInput"
           type="button"
-          class="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[9px] hover:text-white transition-colors"
+          class="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[9px] hover:text-white transition-colors z-10"
           style="color: var(--text-muted);"
           @click="clearSearch"
         >
