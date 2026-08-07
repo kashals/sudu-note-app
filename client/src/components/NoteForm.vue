@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
-import { X, Check } from '@lucide/vue';
+import { X, Check, Pin } from '@lucide/vue';
 import type { Note, CreateNoteDto } from '../types/note';
 import PushButton from './PushButton.vue';
 
@@ -21,11 +21,16 @@ const emit = defineEmits<{
 // local form state
 const title = ref('');
 const content = ref('');
+const category = ref('Document');
+const isPinned = ref(false);
+
 const touchedTitle = ref(false);
 const touchedContent = ref(false);
 
 const maxTitleLength = 200;
 const maxContentLength = 10000;
+
+const categories = ['Document', 'Draft', 'Task', 'Archive'];
 
 // populate on edit
 watch(
@@ -33,6 +38,8 @@ watch(
   (newNote) => {
     title.value = newNote?.title ?? '';
     content.value = newNote?.content ?? '';
+    category.value = newNote?.category ?? 'Document';
+    isPinned.value = newNote?.is_pinned === 1;
     touchedTitle.value = false;
     touchedContent.value = false;
   },
@@ -76,7 +83,12 @@ function handleSubmit() {
   touchedTitle.value = true;
   touchedContent.value = true;
   if (!isValid.value || props.isSubmitting) return;
-  emit('submit', { title: title.value.trim(), content: content.value.trim() });
+  emit('submit', {
+    title: title.value.trim(),
+    content: content.value.trim(),
+    category: category.value,
+    is_pinned: isPinned.value ? 1 : 0
+  });
 }
 
 // Ctrl/Cmd+Enter to submit from anywhere in the form
@@ -186,7 +198,7 @@ function handleFormKeydown(e: KeyboardEvent) {
             <textarea
               id="note-content"
               v-model="content"
-              rows="9"
+              rows="7"
               placeholder="Enter note content..."
               class="w-full resize-y px-3 py-2 text-sm border focus:outline-none transition-colors leading-relaxed"
               :style="`
@@ -200,6 +212,45 @@ function handleFormKeydown(e: KeyboardEvent) {
             <p v-if="contentError" class="mt-1 font-mono text-[11px]" style="color: #f87171;">
               // {{ contentError }}
             </p>
+          </div>
+
+          <!-- properties grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <!-- category selector -->
+            <div>
+              <label for="note-category" class="block text-xs font-medium pb-1.5" style="color: var(--text-secondary);">
+                Category
+              </label>
+              <select
+                id="note-category"
+                v-model="category"
+                class="w-full px-3 py-2 text-sm border focus:outline-none transition-colors rounded"
+                style="background: var(--bg-raised); border-color: var(--border); color: var(--text-primary);"
+                @focus="($el as HTMLSelectElement).style.borderColor = 'var(--accent)'"
+                @blur="($el as HTMLSelectElement).style.borderColor = 'var(--border)'"
+              >
+                <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+              </select>
+            </div>
+
+            <!-- pin toggle button -->
+            <div class="flex flex-col justify-end">
+              <label class="block text-xs font-medium pb-1.5" style="color: var(--text-secondary);">
+                Pinning
+              </label>
+              <button
+                type="button"
+                class="flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2 text-xs font-semibold border transition-all duration-200"
+                style="border-radius: 6px;"
+                :style="isPinned
+                  ? 'background: var(--accent); border-color: var(--accent); color: #fff;'
+                  : 'background: var(--bg-surface); border-color: var(--border); color: var(--text-secondary);'"
+                @click="isPinned = !isPinned"
+              >
+                <Pin class="h-3.5 w-3.5" :style="{ fill: isPinned ? '#fff' : 'none' }" />
+                <span>{{ isPinned ? 'Pinned to top' : 'Pin note' }}</span>
+              </button>
+            </div>
           </div>
 
           <!-- actions -->

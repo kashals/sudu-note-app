@@ -31,7 +31,7 @@ export async function getDb(): Promise<Database> {
   return dbInstance;
 }
 
-// initialize database schema
+// initialize database schema and run migrations
 async function initSchema(db: Database): Promise<void> {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS notes (
@@ -42,4 +42,18 @@ async function initSchema(db: Database): Promise<void> {
       updated_at TEXT NOT NULL
     )
   `);
+
+  // Add category column if missing
+  try {
+    await db.exec("ALTER TABLE notes ADD COLUMN category TEXT DEFAULT 'Document';");
+  } catch (err) {
+    // column already exists
+  }
+
+  // Add is_pinned column if missing
+  try {
+    await db.exec("ALTER TABLE notes ADD COLUMN is_pinned INTEGER DEFAULT 0;");
+  } catch (err) {
+    // column already exists
+  }
 }

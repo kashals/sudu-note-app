@@ -107,12 +107,23 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
+// ─── sorting helper ───────────────────────────────────────────
+function sortNotes() {
+  notes.value.sort((a, b) => {
+    if (b.is_pinned !== a.is_pinned) {
+      return b.is_pinned - a.is_pinned;
+    }
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  });
+}
+
 // ─── fetch ────────────────────────────────────────────────────
 async function fetchNotes() {
   isLoading.value = true;
   connectionError.value = null;
   try {
     notes.value = await getNotes();
+    sortNotes();
   } catch (err: any) {
     connectionError.value = err.message || 'Failed to connect to backend service';
   } finally {
@@ -145,12 +156,18 @@ async function handleFormSubmit(payload: CreateNoteDto) {
     const original: Note | null = index !== -1 ? { ...notes.value[index] } as Note : null;
 
     if (index !== -1) {
-      notes.value[index] = {
-        ...notes.value[index],
+      const currentNote = notes.value[index] as Note;
+      const updatedNotes = [...notes.value];
+      updatedNotes[index] = {
+        ...currentNote,
         title: payload.title,
         content: payload.content,
+        category: payload.category ?? currentNote.category,
+        is_pinned: payload.is_pinned ?? currentNote.is_pinned,
         updated_at: new Date().toISOString(),
       } as Note;
+      notes.value = updatedNotes;
+      sortNotes();
     }
 
     isFormOpen.value = false;
@@ -158,12 +175,22 @@ async function handleFormSubmit(payload: CreateNoteDto) {
     try {
       const updated = await updateNote(targetId, payload);
       const i = notes.value.findIndex((n) => n.id === updated.id);
-      if (i !== -1) notes.value[i] = updated;
+      if (i !== -1) {
+        const updatedNotes = [...notes.value];
+        updatedNotes[i] = updated;
+        notes.value = updatedNotes;
+      }
+      sortNotes();
       showToast('Note updated');
       agentIdle();
     } catch (err: any) {
       // revert
-      if (original && index !== -1) notes.value[index] = original;
+      if (original && index !== -1) {
+        const updatedNotes = [...notes.value];
+        updatedNotes[index] = original;
+        notes.value = updatedNotes;
+      }
+      sortNotes();
       showToast('Reverting...', 'error');
       agentIdle(0);
     }
@@ -175,27 +202,88 @@ async function handleFormSubmit(payload: CreateNoteDto) {
       id: tempId,
       title: payload.title,
       content: payload.content,
+      category: payload.category ?? 'Document',
+      is_pinned: payload.is_pinned ?? 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    notes.value.unshift(tempNote);
+    notes.value = [tempNote, ...notes.value];
+    sortNotes();
     isFormOpen.value = false;
 
     try {
       const created = await createNote(payload);
       const i = notes.value.findIndex((n) => n.id === tempId);
-      if (i !== -1) notes.value[i] = created;
+      if (i !== -1) {
+        const updatedNotes = [...notes.value];
+        updatedNotes[i] = created;
+        notes.value = updatedNotes;
+      }
+      sortNotes();
       showToast('Note created');
       agentIdle();
     } catch (err: any) {
       // revert
       notes.value = notes.value.filter((n) => n.id !== tempId);
+      sortNotes();
       showToast('Reverting...', 'error');
       agentIdle(0);
     }
   }
 
   isSubmittingForm.value = false;
+}
+
+// ─── toggle pin (optimistic) ──────────────────────────────────
+async function handleTogglePin(note: Note) {
+  agentSync();
+  const originalPinned = note.is_pinned;
+  const newPinned = originalPinned === 1 ? 0 : 1;
+
+  const index = notes.value.findIndex((n) => n.id === note.id);
+  if (index !== -1) {
+    const currentNote = notes.value[index] as Note;
+    const updatedNotes = [...notes.value];
+    updatedNotes[index] = {
+      ...currentNote,
+      is_pinned: newPinned,
+      updated_at: new Date().toISOString()
+    } as Note;
+    notes.value = updatedNotes;
+    sortNotes();
+  }
+
+  try {
+    const updated = await updateNote(note.id, {
+      title: note.title,
+      content: note.content,
+      category: note.category,
+      is_pinned: newPinned
+    });
+    const i = notes.value.findIndex((n) => n.id === updated.id);
+    if (i !== -1) {
+      const updatedNotes = [...notes.value];
+      updatedNotes[i] = updated;
+      notes.value = updatedNotes;
+    }
+    sortNotes();
+    showToast(newPinned === 1 ? 'Note pinned' : 'Note unpinned');
+    agentIdle();
+  } catch (err: any) {
+    // revert
+    if (index !== -1) {
+      const currentNote = notes.value[index] as Note;
+      const updatedNotes = [...notes.value];
+      updatedNotes[index] = {
+        ...currentNote,
+        is_pinned: originalPinned
+      } as Note;
+      notes.value = updatedNotes;
+      sortNotes();
+    }
+    showToast('Reverting...', 'error');
+    agentIdle(0);
+  }
 }
 
 // ─── delete (optimistic) ──────────────────────────────────────
@@ -224,6 +312,7 @@ async function handleConfirmDelete() {
   } catch (err: any) {
     // revert
     if (targetIndex !== -1) notes.value.splice(targetIndex, 0, target);
+    sortNotes();
     showToast('Reverting...', 'error');
     agentIdle(0);
   } finally {
@@ -383,6 +472,7 @@ onUnmounted(() => {
         @create="openCreateModal"
         @edit="openEditModal"
         @delete="openDeleteModal"
+        @toggle-pin="handleTogglePin"
         @refresh="fetchNotes"
       />
     </main>

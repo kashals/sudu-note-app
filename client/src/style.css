@@ -151,3 +151,14 @@
 }
 /* exclude animations from the blanket transition */
 [class*="animate-"], canvas, svg * { transition: none; }
+
+/* ─── layout fade (prevent grid/list jitter) ───────────────── */
+.fade-layout-enter-active,
+.fade-layout-leave-active {
+  transition: opacity 0.15s ease-out;
+}
+.fade-layout-enter-from,
+.fade-layout-leave-to {
+  opacity: 0;
+}
+

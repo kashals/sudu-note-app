@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { Search, Grid, List, FileText, Plus, RefreshCw, Check } from '@lucide/vue';
+import { Search, Grid, List, FileText, Plus, Check, Pin } from '@lucide/vue';
 import type { Note } from '../types/note';
 import NoteCard from './NoteCard.vue';
 import PushButton from './PushButton.vue';
@@ -16,6 +16,7 @@ const emit = defineEmits<{
   (e: 'create'): void;
   (e: 'edit', note: Note): void;
   (e: 'delete', note: Note): void;
+  (e: 'toggle-pin', note: Note): void;
   (e: 'refresh'): void;
 }>();
 
@@ -25,21 +26,21 @@ const searchInput = ref('');
 const searchQuery = ref('');
 const viewMode = ref<'grid' | 'list'>('grid');
 
+// ─── pagination state ─────────────────────────────────────────
+const currentPage = ref(1);
+const itemsPerPage = ref(6);
+
 // ─── refresh state ────────────────────────────────────────────
-// 'idle' | 'loading' | 'success'
 const refreshState = ref<'idle' | 'loading' | 'success'>('idle');
 let refreshSuccessTimer: ReturnType<typeof setTimeout> | null = null;
 
-// watch isLoading transitions to drive success state
 watch(
   () => props.isLoading,
   (isNowLoading, wasLoading) => {
     if (isNowLoading) {
-      // loading started
       refreshState.value = 'loading';
       if (refreshSuccessTimer) clearTimeout(refreshSuccessTimer);
     } else if (wasLoading && !isNowLoading) {
-      // loading just finished → show success tick
       refreshState.value = 'success';
       if (refreshSuccessTimer) clearTimeout(refreshSuccessTimer);
       refreshSuccessTimer = setTimeout(() => {
@@ -50,7 +51,7 @@ watch(
 );
 
 function handleRefresh() {
-  if (props.isLoading) return; // prevent double-trigger
+  if (props.isLoading) return;
   emit('refresh');
 }
 
@@ -60,6 +61,11 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 watch(searchInput, (val) => {
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => { searchQuery.value = val; }, 250);
+});
+
+// reset pagination page on search query change
+watch(searchQuery, () => {
+  currentPage.value = 1;
 });
 
 // persist view mode
@@ -72,13 +78,13 @@ function clearSearch() {
   searchQuery.value = '';
 }
 
-// load persisted view mode
+// load view mode
 onMounted(() => {
   const saved = localStorage.getItem(VIEW_MODE_KEY);
   if (saved === 'grid' || saved === 'list') viewMode.value = saved;
 });
 
-// filtered notes
+// filtered notes list
 const filteredNotes = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
   if (!query) return props.notes;
@@ -89,6 +95,26 @@ const filteredNotes = computed(() => {
   );
 });
 
+// separate pinned vs unpinned notes
+const pinnedNotes = computed(() =>
+  filteredNotes.value.filter((note) => note.is_pinned === 1)
+);
+
+const unpinnedNotes = computed(() =>
+  filteredNotes.value.filter((note) => note.is_pinned !== 1)
+);
+
+// unpinned notes pagination
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(unpinnedNotes.value.length / itemsPerPage.value))
+);
+
+const paginatedUnpinnedNotes = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value;
+  const end = start + itemsPerPage.value;
+  return unpinnedNotes.value.slice(start, end);
+});
+
 // stagger delay class
 function staggerClass(index: number): string {
   const cls = ['stagger-1','stagger-2','stagger-3','stagger-4','stagger-5','stagger-6'];
@@ -97,25 +123,23 @@ function staggerClass(index: number): string {
 </script>
 
 <template>
-  <div class="space-y-5">
+  <div class="space-y-6">
     <!-- toolbar -->
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <!-- search -->
+      <!-- search (ErzenXz inspired high fidelity design) -->
       <div class="relative flex-1 max-w-sm">
-        <Search class="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--text-muted);" />
+        <Search class="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style="color: var(--text-muted);" />
         <input
           v-model="searchInput"
           type="text"
-          placeholder="Search notes..."
-          class="w-full pl-9 pr-8 py-2 text-xs border font-mono focus:outline-none transition-colors"
-          style="background: var(--bg-surface); border-color: var(--border); color: var(--text-primary);"
-          @focus="($el as HTMLInputElement).style.borderColor = 'var(--accent)'"
-          @blur="($el as HTMLInputElement).style.borderColor = 'var(--border)'"
+          placeholder="Search workspace notes..."
+          class="input-search text-xs font-mono"
+          @keydown.esc="clearSearch"
         />
         <button
           v-if="searchInput"
           type="button"
-          class="absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] transition-colors"
+          class="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[9px] hover:text-white transition-colors"
           style="color: var(--text-muted);"
           @click="clearSearch"
         >
@@ -125,11 +149,10 @@ function staggerClass(index: number): string {
 
       <!-- actions -->
       <div class="flex items-center gap-2">
-
-        <!-- refresh button: same style always, icon swaps on state -->
+        <!-- refresh -->
         <button
           type="button"
-          class="p-2 border transition-colors"
+          class="p-2 border transition-colors rounded"
           :disabled="isLoading"
           :title="refreshState === 'success' ? 'Up to date' : refreshState === 'loading' ? 'Refreshing...' : 'Refresh'"
           style="background: var(--bg-surface); border-color: var(--border);"
@@ -144,26 +167,24 @@ function staggerClass(index: number): string {
             leave-to-class="opacity-0"
             mode="out-in"
           >
-            <!-- success tick -->
             <Check
               v-if="refreshState === 'success'"
               key="check"
               class="h-3.5 w-3.5"
               style="color: var(--text-secondary);"
             />
-            <!-- idle + loading: refresh arrow, spins when loading -->
             <RefreshCw
               v-else
               key="refresh"
               class="h-3.5 w-3.5"
-              :class="{ 'spin-icon': refreshState === 'loading' }"
+              :class="refreshState === 'loading' ? 'animate-spin' : ''"
               style="color: var(--text-secondary);"
             />
           </Transition>
         </button>
 
-        <!-- view mode toggle -->
-        <div class="flex border" style="border-color: var(--border);">
+        <!-- view mode -->
+        <div class="flex border rounded overflow-hidden" style="border-color: var(--border);">
           <button
             type="button"
             class="p-2 transition-colors"
@@ -196,7 +217,7 @@ function staggerClass(index: number): string {
       </div>
     </div>
 
-    <!-- thin progress bar: refreshing with existing notes -->
+    <!-- loading indicator line -->
     <Transition
       enter-active-class="transition-opacity duration-200"
       enter-from-class="opacity-0"
@@ -217,13 +238,13 @@ function staggerClass(index: number): string {
       </div>
     </Transition>
 
-    <!-- loading skeleton — first load only -->
+    <!-- loading skeleton -->
     <div v-if="isLoading && notes.length === 0" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <div
         v-for="i in 6"
         :key="i"
         class="h-40 border p-5"
-        style="border-color: var(--border);"
+        style="border-color: var(--border); border-radius: 8px;"
       >
         <div class="skeleton h-3 w-2/3 mb-4"></div>
         <div class="space-y-2">
@@ -234,11 +255,11 @@ function staggerClass(index: number): string {
       </div>
     </div>
 
-    <!-- empty state — no notes -->
+    <!-- empty state: zero notes total -->
     <div
       v-else-if="!isLoading && notes.length === 0"
       class="animate-fade-up flex flex-col items-center justify-center border border-dashed py-20 text-center"
-      style="border-color: var(--border);"
+      style="border-color: var(--border); border-radius: 8px;"
     >
       <div
         class="mb-4 p-4 border"
@@ -258,11 +279,11 @@ function staggerClass(index: number): string {
       </div>
     </div>
 
-    <!-- empty state — no search results -->
+    <!-- empty state: search returned zero results -->
     <div
       v-else-if="filteredNotes.length === 0"
       class="animate-fade-up flex flex-col items-center justify-center border border-dashed py-20 text-center"
-      style="border-color: var(--border);"
+      style="border-color: var(--border); border-radius: 8px;"
     >
       <Search class="h-8 w-8 mb-3" style="color: var(--text-muted);" />
       <p class="font-mono text-sm" style="color: var(--text-muted);">// No matching records</p>
@@ -279,20 +300,93 @@ function staggerClass(index: number): string {
       </button>
     </div>
 
-    <!-- notes grid / list -->
-    <div
-      v-else
-      :class="viewMode === 'grid' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-2'"
-    >
-      <NoteCard
-        v-for="(note, index) in filteredNotes"
-        :key="note.id"
-        :note="note"
-        :view-mode="viewMode"
-        :class="`animate-fade-up ${staggerClass(index)}`"
-        @edit="emit('edit', $event)"
-        @delete="emit('delete', $event)"
-      />
+    <!-- render notes workspace (split pinned / unpinned) -->
+    <div v-else class="space-y-6">
+      <!-- ── pinned workspace ── -->
+      <div v-if="pinnedNotes.length > 0" class="space-y-3">
+        <div class="flex items-center gap-2 border-b pb-2" style="border-color: var(--border-subtle);">
+          <Pin class="h-3.5 w-3.5" style="color: var(--accent);" />
+          <h3 class="text-[10px] font-extrabold uppercase tracking-widest" style="color: var(--text-secondary);">
+            Pinned Notes
+          </h3>
+          <span class="font-mono text-[9px] px-1.5 py-0.5 rounded border" style="background: var(--bg-surface); border-color: var(--border); color: var(--text-muted);">
+            {{ pinnedNotes.length }}
+          </span>
+        </div>
+
+        <Transition name="fade-layout" mode="out-in">
+          <div :key="viewMode" :class="viewMode === 'grid' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-2'">
+            <NoteCard
+              v-for="(note, index) in pinnedNotes"
+              :key="note.id"
+              :note="note"
+              :view-mode="viewMode"
+              :index-number="notes.findIndex(n => n.id === note.id)"
+              class="animate-fade-up"
+              @edit="emit('edit', $event)"
+              @delete="emit('delete', $event)"
+              @toggle-pin="emit('toggle-pin', $event)"
+            />
+          </div>
+        </Transition>
+      </div>
+
+      <!-- ── all notes workspace ── -->
+      <div class="space-y-3">
+        <div v-if="pinnedNotes.length > 0" class="flex items-center gap-2 border-b pb-2 pt-2" style="border-color: var(--border-subtle);">
+          <h3 class="text-[10px] font-extrabold uppercase tracking-widest" style="color: var(--text-secondary);">
+            All Workspace Notes
+          </h3>
+          <span class="font-mono text-[9px] px-1.5 py-0.5 rounded border" style="background: var(--bg-surface); border-color: var(--border); color: var(--text-muted);">
+            {{ unpinnedNotes.length }}
+          </span>
+        </div>
+
+        <Transition name="fade-layout" mode="out-in">
+          <div :key="viewMode" :class="viewMode === 'grid' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-2'">
+            <NoteCard
+              v-for="(note, index) in paginatedUnpinnedNotes"
+              :key="note.id"
+              :note="note"
+              :view-mode="viewMode"
+              :index-number="notes.findIndex(n => n.id === note.id)"
+              :class="`animate-fade-up ${staggerClass(index)}`"
+              @edit="emit('edit', $event)"
+              @delete="emit('delete', $event)"
+              @toggle-pin="emit('toggle-pin', $event)"
+            />
+          </div>
+        </Transition>
+
+        <!-- ── pagination controls ── -->
+        <div
+          v-if="totalPages > 1"
+          class="flex items-center justify-between border-t pt-4 mt-6 font-mono text-[11px]"
+          style="border-color: var(--border-subtle);"
+        >
+          <span style="color: var(--text-muted);">
+            Page {{ currentPage }} of {{ totalPages }} · showing max {{ itemsPerPage }} per page
+          </span>
+          <div class="flex items-center gap-2">
+            <button
+              class="px-3 py-1 border transition-colors disabled:opacity-40 select-none rounded"
+              style="background: var(--bg-surface); border-color: var(--border); color: var(--text-secondary);"
+              :disabled="currentPage === 1"
+              @click="currentPage--"
+            >
+              Previous
+            </button>
+            <button
+              class="px-3 py-1 border transition-colors disabled:opacity-40 select-none rounded"
+              style="background: var(--bg-surface); border-color: var(--border); color: var(--text-secondary);"
+              :disabled="currentPage === totalPages"
+              @click="currentPage++"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -304,13 +398,28 @@ function staggerClass(index: number): string {
   100% { transform: translateX(200%);  width: 60%; }
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+/* ErzenXz inspired search input styling */
+.input-search {
+  width: 100%;
+  height: 36px;
+  padding: 8px 12px 8px 36px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  outline: none;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
-.spin-icon {
-  animation: spin 1s linear infinite;
-  transform-origin: center;
+.input-search:hover {
+  border-color: var(--text-muted);
+}
+
+.input-search:active {
+  transform: scale(0.98);
+}
+
+.input-search:focus {
+  border-color: var(--accent);
 }
 </style>

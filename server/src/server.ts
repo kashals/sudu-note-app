@@ -39,7 +39,18 @@ const createNoteSchema = z.object({
     .string()
     .trim()
     .min(1, 'content cannot be empty')
-    .max(10000, 'content too long (max 10000 characters)')
+    .max(10000, 'content too long (max 10000 characters)'),
+  category: z
+    .string()
+    .trim()
+    .max(50)
+    .default('Document'),
+  is_pinned: z
+    .number()
+    .int()
+    .min(0)
+    .max(1)
+    .default(0)
 });
 
 const updateNoteSchema = z.object({
@@ -52,7 +63,18 @@ const updateNoteSchema = z.object({
     .string()
     .trim()
     .min(1, 'content cannot be empty')
-    .max(10000, 'content too long (max 10000 characters)')
+    .max(10000, 'content too long (max 10000 characters)'),
+  category: z
+    .string()
+    .trim()
+    .max(50)
+    .optional(),
+  is_pinned: z
+    .number()
+    .int()
+    .min(0)
+    .max(1)
+    .optional()
 });
 
 // health check endpoint
@@ -65,7 +87,7 @@ app.get('/api/notes', async (_req: Request, res: Response, next: NextFunction) =
   try {
     const db = await getDb();
     const notes = await db.all<Note[]>(
-      'SELECT id, title, content, created_at, updated_at FROM notes ORDER BY updated_at DESC'
+      'SELECT id, title, content, category, is_pinned, created_at, updated_at FROM notes ORDER BY is_pinned DESC, updated_at DESC'
     );
     res.json(notes);
   } catch (error) {
@@ -79,7 +101,7 @@ app.get('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
     const { id } = req.params;
     const db = await getDb();
     const note = await db.get<Note>(
-      'SELECT id, title, content, created_at, updated_at FROM notes WHERE id = ?',
+      'SELECT id, title, content, category, is_pinned, created_at, updated_at FROM notes WHERE id = ?',
       [id]
     );
 
@@ -106,20 +128,22 @@ app.post('/api/notes', async (req: Request, res: Response, next: NextFunction) =
       return;
     }
 
-    const { title, content } = parseResult.data;
+    const { title, content, category, is_pinned } = parseResult.data;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
     const db = await getDb();
     await db.run(
-      'INSERT INTO notes (id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [id, title, content, now, now]
+      'INSERT INTO notes (id, title, content, category, is_pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, title, content, category, is_pinned, now, now]
     );
 
     const newNote: Note = {
       id,
       title,
       content,
+      category,
+      is_pinned,
       created_at: now,
       updated_at: now
     };
@@ -145,23 +169,25 @@ app.put('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
     }
 
     const db = await getDb();
-    const existingNote = await db.get<Note>('SELECT id FROM notes WHERE id = ?', [id]);
+    const existingNote = await db.get<Note>('SELECT id, category, is_pinned FROM notes WHERE id = ?', [id]);
 
     if (!existingNote) {
       res.status(404).json({ error: 'note not found' });
       return;
     }
 
-    const { title, content } = parseResult.data;
+    const { title, content, category, is_pinned } = parseResult.data;
+    const finalCategory = category !== undefined ? category : existingNote.category;
+    const finalIsPinned = is_pinned !== undefined ? is_pinned : existingNote.is_pinned;
     const now = new Date().toISOString();
 
     await db.run(
-      'UPDATE notes SET title = ?, content = ?, updated_at = ? WHERE id = ?',
-      [title, content, now, id]
+      'UPDATE notes SET title = ?, content = ?, category = ?, is_pinned = ?, updated_at = ? WHERE id = ?',
+      [title, content, finalCategory, finalIsPinned, now, id]
     );
 
     const updatedNote = await db.get<Note>(
-      'SELECT id, title, content, created_at, updated_at FROM notes WHERE id = ?',
+      'SELECT id, title, content, category, is_pinned, created_at, updated_at FROM notes WHERE id = ?',
       [id]
     );
 
