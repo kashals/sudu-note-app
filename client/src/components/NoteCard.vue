@@ -161,7 +161,8 @@ function getTagStyle(tag: string) {
     <!-- Right meta & actions -->
     <div class="flex items-center gap-4 shrink-0">
       <span class="hidden md:block font-mono text-[10px]" style="color: var(--text-muted);">
-        {{ formatDate(note.updated_at) }}
+        <span class="edited-time">{{ formatDate(note.updated_at) }}</span>
+        <span class="created-time">Created: {{ formatDate(note.created_at) }}</span>
       </span>
       
       <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -291,7 +292,10 @@ function getTagStyle(tag: string) {
       </div>
       <div class="card-text-details">
         <div class="card-title truncate" :title="note.title">{{ note.title }}</div>
-        <div class="card-subtitle">{{ formatDate(note.updated_at) }}</div>
+        <div class="card-subtitle">
+          <span class="edited-time">{{ formatDate(note.updated_at) }}</span>
+          <span class="created-time">Created: {{ formatDate(note.created_at) }}</span>
+        </div>
       </div>
     </div>
 
@@ -332,7 +336,7 @@ function getTagStyle(tag: string) {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 242px; /* Reserves layout space in the grid */
+  height: 258px; /* Reserves layout space in the grid */
   cursor: pointer;
 }
 
@@ -352,7 +356,7 @@ function getTagStyle(tag: string) {
 
 /* Hover: Stretches down to wrap metadata & actions, and lifts up */
 .main-card-layout:hover .card-bg {
-  height: 238px;
+  height: 254px;
   transform: translateY(-6px);
   border-color: var(--accent);
   box-shadow: 0 10px 25px -10px var(--accent-glow);
@@ -465,9 +469,12 @@ function getTagStyle(tag: string) {
 }
 
 .card-subtitle {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
-  font-family: monospace;
+  font-family: 'JetBrains Mono', monospace;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* Actions & statistics row */
@@ -543,5 +550,18 @@ button {
   background: transparent;
   border: none;
   cursor: pointer;
+}
+
+/* Hover reveal timestamps */
+.created-time {
+  display: none;
+}
+
+.group:hover .created-time {
+  display: block;
+}
+
+.main-card-layout:hover .created-time {
+  display: block;
 }
 </style>
