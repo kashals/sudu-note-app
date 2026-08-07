@@ -28,6 +28,7 @@ const toastType = ref<'success' | 'error'>('success');
 // ─── agent + theme state ──────────────────────────────────────
 const agentStatus = ref<'idle' | 'syncing'>('idle');
 const isDark = ref(true);
+const isShortcutsOpen = ref(false);
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let agentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -80,6 +81,15 @@ function dismissToast() {
 
 // ─── keyboard shortcuts ───────────────────────────────────────
 function handleGlobalKeydown(e: KeyboardEvent) {
+  const isInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA';
+  
+  // Toggle help modal when pressing '?'
+  if (e.key === '?' && !isInput) {
+    e.preventDefault();
+    isShortcutsOpen.value = !isShortcutsOpen.value;
+    return;
+  }
+
   const mod = e.metaKey || e.ctrlKey;
 
   // Ctrl/Cmd+N → new note (only when no modal is open)
@@ -91,8 +101,9 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
   // Escape → close any open modal
   if (e.key === 'Escape') {
-    if (isFormOpen.value)        isFormOpen.value = false;
+    if (isFormOpen.value)             isFormOpen.value = false;
     else if (isDeleteModalOpen.value) isDeleteModalOpen.value = false;
+    else if (isShortcutsOpen.value)   isShortcutsOpen.value = false;
   }
 }
 
@@ -270,9 +281,8 @@ onUnmounted(() => {
 
     <!-- ─── header ─── -->
     <header
-      class="sticky z-40 border-b"
+      class="sticky top-0 z-40 border-b"
       :style="{
-        top: connectionError ? '41px' : '0',
         background: 'var(--bg-surface)',
         borderColor: 'var(--border)',
         backdropFilter: 'blur(12px)',
@@ -295,6 +305,31 @@ onUnmounted(() => {
               file management system
             </p>
           </div>
+        </div>
+
+        <!-- system health / AI agent status in center -->
+        <div class="hidden md:flex items-center gap-2 font-mono text-[11px] px-3 py-1.5 border" style="background: var(--bg-raised); border-color: var(--border);">
+          <span class="relative flex h-1.5 w-1.5">
+            <span
+              v-if="agentStatus === 'syncing'"
+              class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+              style="background: var(--accent);"
+            ></span>
+            <span
+              class="relative inline-flex rounded-full h-1.5 w-1.5 transition-colors duration-300"
+              :style="agentStatus === 'syncing'
+                ? 'background: var(--accent);'
+                : 'background: var(--text-muted); opacity: 0.5;'"
+            ></span>
+          </span>
+          <Transition name="fade" mode="out-in">
+            <span
+              :key="agentStatus"
+              :style="agentStatus === 'syncing' ? 'color: var(--accent-light);' : 'color: var(--text-muted);'"
+            >
+              {{ agentStatus === 'syncing' ? 'AI Syncing...' : 'System Status: Active' }}
+            </span>
+          </Transition>
         </div>
 
         <!-- right badges -->
@@ -326,79 +361,16 @@ onUnmounted(() => {
             <Sun v-if="isDark" class="h-4 w-4" />
             <Moon v-else class="h-4 w-4" />
           </button>
-        </div>
-      </div>
 
-      <!-- ─── system status strip ─── -->
-      <div
-        class="border-t px-4 sm:px-6 lg:px-8 py-1.5 flex items-center justify-between"
-        style="border-color: var(--border-subtle); background: var(--bg-raised);"
-      >
-        <!-- breadcrumb -->
-        <nav class="flex items-center gap-1 font-mono text-[10px]" aria-label="breadcrumb">
-          <template v-for="(crumb, i) in breadcrumb" :key="crumb">
-            <span
-              :style="i === breadcrumb.length - 1
-                ? 'color: var(--accent-light);'
-                : 'color: var(--text-muted);'"
-            >{{ crumb }}</span>
-            <span
-              v-if="i < breadcrumb.length - 1"
-              class="mx-1"
-              style="color: var(--text-muted); opacity: 0.4;"
-            >/</span>
-          </template>
-        </nav>
-
-        <!-- right side: agent status + keyboard hint -->
-        <div class="flex items-center gap-4">
-          <!-- keyboard shortcuts hint -->
-          <div class="hidden md:flex items-center gap-2.5 font-mono text-[10px]" style="color: var(--text-muted);">
-            <Keyboard class="h-3 w-3 shrink-0" />
-            <span class="opacity-60">
-              <kbd class="px-1 border rounded text-[9px]" style="border-color: var(--border);">Ctrl+N</kbd>
-              New ·
-              <kbd class="px-1 border rounded text-[9px]" style="border-color: var(--border);">Ctrl+↵</kbd>
-              Save ·
-              <kbd class="px-1 border rounded text-[9px]" style="border-color: var(--border);">Esc</kbd>
-              Close
-            </span>
-          </div>
-
-          <!-- agent status -->
-          <div class="flex items-center gap-1.5 font-mono text-[10px]">
-            <span class="relative flex h-1.5 w-1.5">
-              <span
-                v-if="agentStatus === 'syncing'"
-                class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                style="background: var(--accent);"
-              ></span>
-              <span
-                class="relative inline-flex rounded-full h-1.5 w-1.5 transition-colors duration-300"
-                :style="agentStatus === 'syncing'
-                  ? 'background: var(--accent);'
-                  : 'background: var(--text-muted); opacity: 0.5;'"
-              ></span>
-            </span>
-            <Transition
-              enter-active-class="transition-all duration-200"
-              enter-from-class="opacity-0 translate-x-1"
-              enter-to-class="opacity-100 translate-x-0"
-              leave-active-class="transition-all duration-200"
-              leave-from-class="opacity-100"
-              leave-to-class="opacity-0"
-              mode="out-in"
-            >
-              <span
-                :key="agentStatus"
-                :style="agentStatus === 'syncing'
-                  ? 'color: var(--accent-light);'
-                  : 'color: var(--text-muted);'"
-              >
-                {{ agentStatus === 'syncing' ? 'AI Syncing...' : 'AI Agent  ·  Idle' }}
-              </span>
-            </Transition>
-          </div>
+          <!-- shortcuts help button -->
+          <button
+            class="p-2 border transition-colors flex items-center justify-center font-bold"
+            title="Keyboard Shortcuts (?)"
+            style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary); width: 34px; height: 34px;"
+            @click="isShortcutsOpen = true"
+          >
+            ?
+          </button>
         </div>
       </div>
     </header>
@@ -442,6 +414,61 @@ onUnmounted(() => {
       @confirm="handleConfirmDelete"
       @cancel="isDeleteModalOpen = false"
     />
+
+    <!-- Keyboard Shortcuts Modal -->
+    <Transition
+      enter-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-150"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="isShortcutsOpen"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style="background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);"
+        @click.self="isShortcutsOpen = false"
+      >
+        <div
+          class="animate-scale-in w-full max-w-sm border"
+          style="background: var(--bg-surface); border-color: var(--border);"
+        >
+          <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--border-subtle);">
+            <div class="flex items-center gap-2">
+              <Keyboard class="h-4 w-4" style="color: var(--accent);" />
+              <h3 class="text-sm font-semibold" style="color: var(--text-primary);">Keyboard Shortcuts</h3>
+            </div>
+            <button
+              type="button"
+              class="transition-colors"
+              style="color: var(--text-muted);"
+              @click="isShortcutsOpen = false"
+            >
+              <X class="h-4 w-4" />
+            </button>
+          </div>
+          <div class="p-5 space-y-3 font-mono text-xs">
+            <div class="flex items-center justify-between py-1 border-b" style="border-color: var(--border-subtle);">
+              <span style="color: var(--text-secondary);">Create Note</span>
+              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Ctrl</kbd> + <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">N</kbd></span>
+            </div>
+            <div class="flex items-center justify-between py-1 border-b" style="border-color: var(--border-subtle);">
+              <span style="color: var(--text-secondary);">Save Note</span>
+              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Ctrl</kbd> + <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Enter</kbd></span>
+            </div>
+            <div class="flex items-center justify-between py-1 border-b" style="border-color: var(--border-subtle);">
+              <span style="color: var(--text-secondary);">Close Modal</span>
+              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Esc</kbd></span>
+            </div>
+            <div class="flex items-center justify-between py-1">
+              <span style="color: var(--text-secondary);">Shortcuts Menu</span>
+              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">?</kbd></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- ─── toast ─── -->
     <Transition

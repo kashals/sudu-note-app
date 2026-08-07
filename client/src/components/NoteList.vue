@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { Search, Grid, List, FileText, Plus, RefreshCw } from '@lucide/vue';
+import { Search, Grid, List, FileText, Plus, RefreshCw, Check } from '@lucide/vue';
 import type { Note } from '../types/note';
 import NoteCard from './NoteCard.vue';
 import PushButton from './PushButton.vue';
@@ -25,9 +25,38 @@ const searchInput = ref('');
 const searchQuery = ref('');
 const viewMode = ref<'grid' | 'list'>('grid');
 
+// ─── refresh state ────────────────────────────────────────────
+// 'idle' | 'loading' | 'success'
+const refreshState = ref<'idle' | 'loading' | 'success'>('idle');
+let refreshSuccessTimer: ReturnType<typeof setTimeout> | null = null;
+
+// watch isLoading transitions to drive success state
+watch(
+  () => props.isLoading,
+  (isNowLoading, wasLoading) => {
+    if (isNowLoading) {
+      // loading started
+      refreshState.value = 'loading';
+      if (refreshSuccessTimer) clearTimeout(refreshSuccessTimer);
+    } else if (wasLoading && !isNowLoading) {
+      // loading just finished → show success tick
+      refreshState.value = 'success';
+      if (refreshSuccessTimer) clearTimeout(refreshSuccessTimer);
+      refreshSuccessTimer = setTimeout(() => {
+        refreshState.value = 'idle';
+      }, 2000);
+    }
+  }
+);
+
+function handleRefresh() {
+  if (props.isLoading) return; // prevent double-trigger
+  emit('refresh');
+}
+
+// ─── search debounce ──────────────────────────────────────────
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-// debounced search
 watch(searchInput, (val) => {
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => { searchQuery.value = val; }, 250);
@@ -79,11 +108,7 @@ function staggerClass(index: number): string {
           type="text"
           placeholder="Search notes..."
           class="w-full pl-9 pr-8 py-2 text-xs border font-mono focus:outline-none transition-colors"
-          style="
-            background: var(--bg-surface);
-            border-color: var(--border);
-            color: var(--text-primary);
-          "
+          style="background: var(--bg-surface); border-color: var(--border); color: var(--text-primary);"
           @focus="($el as HTMLInputElement).style.borderColor = 'var(--accent)'"
           @blur="($el as HTMLInputElement).style.borderColor = 'var(--border)'"
         />
@@ -100,18 +125,44 @@ function staggerClass(index: number): string {
 
       <!-- actions -->
       <div class="flex items-center gap-2">
-        <!-- refresh -->
+
+        <!-- refresh button: same style always, icon swaps on state -->
         <button
           type="button"
           class="p-2 border transition-colors"
-          style="background: var(--bg-surface); border-color: var(--border); color: var(--text-muted);"
-          title="Refresh"
-          @click="emit('refresh')"
+          :disabled="isLoading"
+          :title="refreshState === 'success' ? 'Up to date' : refreshState === 'loading' ? 'Refreshing...' : 'Refresh'"
+          style="background: var(--bg-surface); border-color: var(--border);"
+          @click="handleRefresh"
         >
-          <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': isLoading }" />
+          <Transition
+            enter-active-class="transition-opacity duration-150"
+            enter-from-class="opacity-0"
+            enter-to-class="opacity-100"
+            leave-active-class="transition-opacity duration-100"
+            leave-from-class="opacity-100"
+            leave-to-class="opacity-0"
+            mode="out-in"
+          >
+            <!-- success tick -->
+            <Check
+              v-if="refreshState === 'success'"
+              key="check"
+              class="h-3.5 w-3.5"
+              style="color: var(--text-secondary);"
+            />
+            <!-- idle + loading: refresh arrow, spins when loading -->
+            <RefreshCw
+              v-else
+              key="refresh"
+              class="h-3.5 w-3.5"
+              :class="{ 'spin-icon': refreshState === 'loading' }"
+              style="color: var(--text-secondary);"
+            />
+          </Transition>
         </button>
 
-        <!-- view mode -->
+        <!-- view mode toggle -->
         <div class="flex border" style="border-color: var(--border);">
           <button
             type="button"
@@ -145,7 +196,28 @@ function staggerClass(index: number): string {
       </div>
     </div>
 
-    <!-- loading skeleton -->
+    <!-- thin progress bar: refreshing with existing notes -->
+    <Transition
+      enter-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-300"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="isLoading && notes.length > 0"
+        class="w-full h-[2px] overflow-hidden"
+        style="background: var(--border);"
+      >
+        <div
+          class="h-full"
+          style="background: var(--accent); animation: progressBar 1.2s ease-in-out infinite;"
+        ></div>
+      </div>
+    </Transition>
+
+    <!-- loading skeleton — first load only -->
     <div v-if="isLoading && notes.length === 0" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <div
         v-for="i in 6"
@@ -224,3 +296,21 @@ function staggerClass(index: number): string {
     </div>
   </div>
 </template>
+
+<style scoped>
+@keyframes progressBar {
+  0%   { transform: translateX(-100%); width: 60%; }
+  50%  { transform: translateX(80%);   width: 60%; }
+  100% { transform: translateX(200%);  width: 60%; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+  transform-origin: center;
+}
+</style>

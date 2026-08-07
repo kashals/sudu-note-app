@@ -85,18 +85,18 @@ function formatDate(isoString: string): string {
   <!-- grid card -->
   <div
     v-else
-    class="group flex flex-col justify-between border transition-all duration-200 p-5 cursor-default"
+    class="group flex flex-col justify-between border transition-all duration-200 p-5 cursor-default h-[180px]"
     style="background: var(--bg-surface); border-color: var(--border);"
     @mouseover="($el as HTMLElement).style.borderColor = 'var(--accent)'"
     @mouseleave="($el as HTMLElement).style.borderColor = 'var(--border)'"
   >
     <!-- card header -->
-    <div>
+    <div class="min-w-0">
       <div
-        class="flex items-start justify-between gap-3 pb-3 border-b"
+        class="flex items-center justify-between gap-3 pb-3 border-b min-w-0"
         style="border-color: var(--border-subtle);"
       >
-        <h4 class="text-sm font-semibold line-clamp-1 transition-colors" style="color: var(--text-primary);">
+        <h4 class="text-sm font-bold truncate flex-1 transition-colors" style="color: var(--text-primary);">
           {{ note.title }}
         </h4>
         <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
@@ -126,25 +126,14 @@ function formatDate(isoString: string): string {
       </div>
 
       <!-- content -->
-      <div class="pt-3 text-xs leading-relaxed whitespace-pre-wrap" style="color: var(--text-secondary);">
-        <p :class="{ 'line-clamp-4': !isExpanded }">{{ note.content }}</p>
-        <button
-          v-if="note.content.length > 180"
-          type="button"
-          class="mt-2 flex items-center gap-1 font-mono text-[11px] transition-colors"
-          style="color: var(--text-muted);"
-          @click="isExpanded = !isExpanded"
-        >
-          <span>{{ isExpanded ? 'Collapse' : 'Expand' }}</span>
-          <ChevronUp v-if="isExpanded" class="h-3 w-3" />
-          <ChevronDown v-else class="h-3 w-3" />
-        </button>
+      <div class="pt-3 text-xs leading-relaxed" style="color: var(--text-secondary);">
+        <p class="line-clamp-3 break-words">{{ note.content }}</p>
       </div>
     </div>
 
     <!-- card footer -->
     <div
-      class="mt-4 flex items-center gap-1.5 pt-3 border-t"
+      class="mt-3 flex items-center gap-1.5 pt-2 border-t"
       style="border-color: var(--border-subtle);"
     >
       <Clock class="h-3 w-3" style="color: var(--text-muted);" />
