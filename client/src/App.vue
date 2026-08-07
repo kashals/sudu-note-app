@@ -13,6 +13,7 @@ const isLoading = ref(false);
 const isFormOpen = ref(false);
 const noteToEdit = ref<Note | null>(null);
 const isSubmittingForm = ref(false);
+const noteFormRef = ref<{ requestClose: () => void } | null>(null);
 
 // ─── delete state ─────────────────────────────────────────────
 const isDeleteModalOpen = ref(false);
@@ -135,10 +136,14 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 
   // Escape → close any open modal or blur active inputs
   if (e.key === 'Escape') {
-    if (isFormOpen.value)             isFormOpen.value = false;
-    else if (isDeleteModalOpen.value) isDeleteModalOpen.value = false;
-    else if (isShortcutsOpen.value)   isShortcutsOpen.value = false;
-    else if (isInput) {
+    if (isFormOpen.value) {
+      // Delegate to NoteForm's guard which checks for dirty state
+      noteFormRef.value?.requestClose();
+    } else if (isDeleteModalOpen.value) {
+      isDeleteModalOpen.value = false;
+    } else if (isShortcutsOpen.value) {
+      isShortcutsOpen.value = false;
+    } else if (isInput) {
       (document.activeElement as HTMLElement)?.blur();
     }
   }
@@ -273,6 +278,42 @@ async function handleFormSubmit(payload: CreateNoteDto) {
   }
 
   isSubmittingForm.value = false;
+}
+
+// ─── auto-save (silent, no close) ────────────────────────────
+async function handleAutoSave(payload: CreateNoteDto) {
+  if (!noteToEdit.value) return;
+  const targetId = noteToEdit.value.id;
+  const index = notes.value.findIndex((n) => n.id === targetId);
+  if (index === -1) return;
+
+  // Optimistically update the in-memory list without closing form
+  const currentNote = notes.value[index] as Note;
+  const updatedNotes = [...notes.value];
+  updatedNotes[index] = {
+    ...currentNote,
+    title: payload.title,
+    content: payload.content,
+    category: payload.category ?? currentNote.category,
+    is_pinned: payload.is_pinned ?? currentNote.is_pinned,
+    is_archived: payload.is_archived ?? currentNote.is_archived,
+    tags: payload.tags ?? currentNote.tags,
+    updated_at: new Date().toISOString(),
+  } as Note;
+  notes.value = updatedNotes;
+
+  try {
+    const updated = await updateNote(targetId, payload);
+    const i = notes.value.findIndex((n) => n.id === updated.id);
+    if (i !== -1) {
+      const fresh = [...notes.value];
+      fresh[i] = updated;
+      notes.value = fresh;
+    }
+    sortNotes();
+  } catch {
+    // Silent failure — user can still manually save
+  }
 }
 
 // ─── toggle pin (optimistic) ──────────────────────────────────
@@ -605,11 +646,13 @@ onUnmounted(() => {
 
     <!-- ─── modals ─── -->
     <NoteForm
+      ref="noteFormRef"
       :is-open="isFormOpen"
       :note-to-edit="noteToEdit"
       :is-submitting="isSubmittingForm"
       :server-error="formError"
       @submit="handleFormSubmit"
+      @autosave="handleAutoSave"
       @cancel="isFormOpen = false"
     />
 

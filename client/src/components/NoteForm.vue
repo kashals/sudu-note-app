@@ -5,7 +5,8 @@ import {
   User, Briefcase, Lightbulb, BookOpen, Users, Folder, Settings,
   Maximize2, Minimize2, Bold, Italic, Underline, AlignLeft,
   AlignCenter, AlignRight, AlignJustify, Outdent, Indent,
-  List, ListOrdered, CheckSquare, Quote, PenTool, Layout, Menu
+  List, ListOrdered, CheckSquare, Quote, PenTool, Layout, Menu,
+  Undo, Redo, HelpCircle
 } from '@lucide/vue';
 import type { Note, CreateNoteDto } from '../types/note';
 import PushButton from './PushButton.vue';
@@ -21,6 +22,7 @@ const props = defineProps<{
 // component emits
 const emit = defineEmits<{
   (e: 'submit', payload: CreateNoteDto): void;
+  (e: 'autosave', payload: CreateNoteDto): void;
   (e: 'cancel'): void;
 }>();
 
@@ -49,6 +51,62 @@ const isDropdownOpen = ref(false);
 // Sidebar toggle state
 const showSidebar = ref(false);
 
+// Shortcuts modal state
+const isShortcutsModalOpen = ref(false);
+
+// Auto-save state
+const autoSave = ref(localStorage.getItem('sudu_autosave') !== 'false');
+const autoSaveStatus = ref<'idle' | 'saving' | 'saved'>('idle');
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Dirty flag — only true when the USER has actually changed something
+// Never set by programmatic updates (load, noteToEdit prop change, etc.)
+const isDirty = ref(false);
+
+function markDirty() {
+  isDirty.value = true;
+}
+
+function toggleAutoSave() {
+  autoSave.value = !autoSave.value;
+  localStorage.setItem('sudu_autosave', String(autoSave.value));
+  if (!autoSave.value) {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+    autoSaveStatus.value = 'idle';
+  }
+}
+
+function triggerAutoSave() {
+  if (!autoSave.value || !props.isOpen) return;
+  if (!props.noteToEdit?.id) return;
+  if (!isDirty.value) return;
+  // Silently reset the debounce timer — NO status change while user is typing
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => doAutoSave(), 3000);
+}
+
+function doAutoSave() {
+  if (!isValid.value || props.isSubmitting) {
+    autoSaveStatus.value = 'idle';
+    return;
+  }
+  // Mark clean before emitting so any reactive side-effects don't re-trigger
+  isDirty.value = false;
+  autoSaveStatus.value = 'saving';
+  const finalCategory = isCustomCategory.value ? customCategoryValue.value.trim() : category.value;
+  emit('autosave', {
+    title: title.value.trim(),
+    content: content.value,
+    category: finalCategory,
+    is_pinned: isPinned.value ? 1 : 0,
+    is_archived: props.noteToEdit?.is_archived ?? 0,
+    tags: JSON.stringify(noteTags.value)
+  });
+  setTimeout(() => { autoSaveStatus.value = 'saved'; }, 600);
+  setTimeout(() => { autoSaveStatus.value = 'idle'; }, 2400);
+}
+
 // tags tracking
 const noteTags = ref<string[]>([]);
 const newTagInput = ref('');
@@ -69,6 +127,12 @@ const activeFormats = ref({
   alignJustify: false,
   list: false,
   listOrdered: false
+});
+
+// Category watch — only handles isCustomCategory flag, no autosave
+watch(category, (val) => {
+  isCustomCategory.value = val === '__custom__';
+  if (val !== '__custom__') customCategoryValue.value = '';
 });
 
 // editor element reference
@@ -105,7 +169,11 @@ watch(
       isCustomCategory.value = false;
     }
     isDropdownOpen.value = false;
-    showSidebar.value = false; // Reset to hidden on load
+    showSidebar.value = false;
+    // Reset dirty — this is a programmatic load, not a user change
+    isDirty.value = false;
+    if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
+    autoSaveStatus.value = 'idle';
 
     // sync content editable block
     await nextTick();
@@ -142,12 +210,6 @@ watch(editorRef, (el) => {
   }
 });
 
-watch(category, (val) => {
-  isCustomCategory.value = val === '__custom__';
-  if (val !== '__custom__') {
-    customCategoryValue.value = '';
-  }
-});
 
 // Category Icon map helper
 function getCategoryIcon(cat: string) {
@@ -166,6 +228,8 @@ function getCategoryIcon(cat: string) {
 function selectCategory(cat: string) {
   category.value = cat;
   isDropdownOpen.value = false;
+  markDirty();
+  triggerAutoSave();
 }
 
 // active text formats updater
@@ -201,7 +265,6 @@ function format(command: string, value: string = '') {
     const currentBlock = document.queryCommandValue('formatBlock').toLowerCase();
     const target = value.toLowerCase();
     if (currentBlock === target) {
-      // Toggle off: revert to paragraph
       document.execCommand('formatBlock', false, 'p');
     } else {
       document.execCommand('formatBlock', false, value);
@@ -214,6 +277,8 @@ function format(command: string, value: string = '') {
     content.value = editorRef.value.innerHTML;
     updateActiveFormats();
   }
+  markDirty();
+  triggerAutoSave();
 }
 
 // Checkbox item creation — inserts a todo-item and keeps cursor on the same line
@@ -269,6 +334,8 @@ function handleEditorInput() {
     content.value = editorRef.value.innerHTML;
     touchedContent.value = true;
     updateActiveFormats();
+    markDirty();
+    triggerAutoSave();
   }
 }
 
@@ -360,10 +427,35 @@ function handleEditorKeydown(e: KeyboardEvent) {
     }
   }
 
+  // Ctrl+Z / Ctrl+Y for Undo / Redo tracking
+  if ((e.ctrlKey || e.metaKey) && ['z', 'y'].includes(e.key.toLowerCase())) {
+    setTimeout(() => {
+      if (editorRef.value) {
+        content.value = editorRef.value.innerHTML;
+        updateActiveFormats();
+        markDirty();
+        triggerAutoSave();
+      }
+    }, 10);
+  }
+
   // Ctrl+Enter to submit
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
     e.preventDefault();
     handleSubmit();
+    return;
+  }
+
+  // Escape: close shortcuts modal, dismiss warning, or go through the close guard
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (isShortcutsModalOpen.value) {
+      isShortcutsModalOpen.value = false;
+    } else if (showUnsavedWarning.value) {
+      dismissWarning();
+    } else {
+      requestClose();
+    }
   }
 }
 
@@ -394,11 +486,15 @@ function addTag() {
   tagError.value = null;
   newTagInput.value = '';
   noteTags.value.push(clean);
+  markDirty();
+  triggerAutoSave();
 }
 
 function removeTag(tag: string) {
   noteTags.value = noteTags.value.filter(t => t !== tag);
   tagError.value = null;
+  markDirty();
+  triggerAutoSave();
 }
 
 function toggleQuickTag(tag: string) {
@@ -414,6 +510,8 @@ function toggleQuickTag(tag: string) {
     tagError.value = null;
     noteTags.value.push(tag);
   }
+  markDirty();
+  triggerAutoSave();
 }
 
 function getTagStyle(tag: string) {
@@ -497,8 +595,11 @@ function handleSubmit() {
   touchedContent.value = true;
   if (!isValid.value || props.isSubmitting) return;
 
+  isDirty.value = false;
+  showUnsavedWarning.value = false;
+  if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
+
   const finalCategory = isCustomCategory.value ? customCategoryValue.value.trim() : category.value;
-  
   emit('submit', {
     title: title.value.trim(),
     content: content.value,
@@ -507,6 +608,29 @@ function handleSubmit() {
     is_archived: props.noteToEdit?.is_archived ?? 0,
     tags: JSON.stringify(noteTags.value)
   });
+}
+
+// Unsaved changes guard
+const showUnsavedWarning = ref(false);
+
+function requestClose() {
+  if (isDirty.value) {
+    showUnsavedWarning.value = true;
+  } else {
+    emit('cancel');
+  }
+}
+
+function confirmDiscard() {
+  isDirty.value = false;
+  showUnsavedWarning.value = false;
+  if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
+  autoSaveStatus.value = 'idle';
+  emit('cancel');
+}
+
+function dismissWarning() {
+  showUnsavedWarning.value = false;
 }
 
 // Click away dropdown listener
@@ -523,7 +647,11 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', closeDropdownOnOutsideClick);
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
 });
+
+// Expose requestClose so App.vue's global Escape can delegate here
+defineExpose({ requestClose });
 </script>
 
 <template>
@@ -539,9 +667,10 @@ onUnmounted(() => {
       v-if="isOpen"
       class="fixed inset-0 z-50 flex items-center justify-center p-0"
       style="background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);"
-      @click.self="emit('cancel')"
+      @click.self="requestClose()"
     >
       <div class="fixed inset-0 w-screen h-screen flex flex-col z-50 animate-scale-in" style="background: var(--bg-base);">
+
         <!-- Sticky Minimalist Header -->
         <header class="flex items-center justify-between border-b px-6 py-3.5 shrink-0" style="background: var(--bg-surface); border-color: var(--border);">
           <div class="flex items-center gap-3">
@@ -557,42 +686,34 @@ onUnmounted(() => {
             </button>
             
             <div class="flex items-center gap-2 text-xs font-mono select-none" style="color: var(--text-muted);">
-              <span>SuDu workspace</span>
+              <button
+                type="button"
+                class="hover:underline transition-colors cursor-pointer"
+                style="color: var(--text-muted);"
+                title="Return to Workspace"
+                @click="requestClose()"
+              >
+                SuDu workspace
+              </button>
               <span>/</span>
-              <span style="color: var(--accent-light);">{{ category }}</span>
+              <button
+                type="button"
+                class="hover:underline transition-colors cursor-pointer"
+                style="color: var(--accent-light);"
+                :title="`Return from ${category}`"
+                @click="requestClose()"
+              >
+                {{ category === '__custom__' ? (customCategoryValue || 'Custom') : category }}
+              </button>
               <span>/</span>
               <span class="truncate max-w-[200px]" style="color: var(--text-secondary);">{{ title || 'Untitled Note' }}</span>
             </div>
           </div>
           
           <div class="flex items-center gap-3">
-            <!-- Close / Discard -->
-            <button
-              type="button"
-              class="p-1.5 border transition-colors rounded"
-              style="background: var(--bg-raised); border-color: var(--border); color: var(--text-muted);"
-              title="Discard & Close"
-              @click="emit('cancel')"
-            >
-              <X class="h-3.5 w-3.5" />
-            </button>
-
-            <!-- Pin Toggle -->
-            <button
-              type="button"
-              class="p-1.5 border transition-all duration-200 rounded"
-              :style="isPinned
-                ? 'background: var(--accent-glow); border-color: var(--accent); color: var(--accent-light);'
-                : 'background: var(--bg-raised); border-color: var(--border); color: var(--text-muted);'"
-              :title="isPinned ? 'Unpin Note' : 'Pin to Top'"
-              @click="isPinned = !isPinned"
-            >
-              <Pin class="h-3.5 w-3.5" :style="{ fill: isPinned ? 'var(--accent)' : 'none' }" />
-            </button>
-
             <PushButton variant="primary" :disabled="!isValid" @click="handleSubmit">
               <Check class="w-3.5 h-3.5" />
-              Save & Close
+              Save &amp; Close
             </PushButton>
           </div>
         </header>
@@ -718,6 +839,41 @@ onUnmounted(() => {
                   </div>
                 </div>
 
+                <!-- Pin Note Toggle -->
+                <div class="pt-4 border-t flex items-center justify-between" style="border-color: var(--border-subtle);">
+                  <div>
+                    <span class="block text-[11px] font-mono" style="color: var(--text-secondary);">// Pin Note</span>
+                    <span class="block text-[10px] font-mono mt-0.5" style="color: var(--text-muted);">Keep note pinned at top</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="autosave-toggle"
+                    :class="{ 'autosave-toggle--on': isPinned }"
+                    :title="isPinned ? 'Unpin Note' : 'Pin to Top'"
+                    @click="isPinned = !isPinned; markDirty(); triggerAutoSave();"
+                  >
+                    <span class="autosave-thumb" />
+                  </button>
+                </div>
+
+                <!-- Auto-Save Toggle -->
+                <div class="pt-4 border-t flex items-center justify-between" style="border-color: var(--border-subtle);">
+                  <div>
+                    <span class="block text-[11px] font-mono" style="color: var(--text-secondary);">// Auto-Save</span>
+                    <span class="block text-[10px] font-mono mt-0.5" style="color: var(--text-muted);">Saves 3s after typing stops</span>
+                  </div>
+                  <!-- Toggle switch -->
+                  <button
+                    type="button"
+                    class="autosave-toggle"
+                    :class="{ 'autosave-toggle--on': autoSave }"
+                    :title="autoSave ? 'Auto-Save ON — click to disable' : 'Auto-Save OFF — click to enable'"
+                    @click="toggleAutoSave()"
+                  >
+                    <span class="autosave-thumb" />
+                  </button>
+                </div>
+
                 <!-- Fast Tag Suggestions -->
                 <div class="pt-4 border-t" style="border-color: var(--border-subtle);">
                   <span class="block text-[11px] font-mono mb-2" style="color: var(--text-secondary);">// Quick Add</span>
@@ -734,6 +890,22 @@ onUnmounted(() => {
                     </button>
                   </div>
                 </div>
+
+                <!-- Keyboard Shortcuts Button -->
+                <div class="pt-4 border-t" style="border-color: var(--border-subtle);">
+                  <button
+                    type="button"
+                    class="w-full px-3 py-2 text-xs font-mono border rounded flex items-center justify-between transition-colors hover:border-gray-500"
+                    style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary);"
+                    @click="isShortcutsModalOpen = true"
+                  >
+                    <div class="flex items-center gap-2">
+                      <HelpCircle class="w-3.5 h-3.5" style="color: var(--accent);" />
+                      <span>Keyboard Shortcuts</span>
+                    </div>
+                    <span class="px-1.5 py-0.5 text-[9px] border rounded font-mono" style="background: var(--bg-surface); border-color: var(--border); color: var(--text-muted);">?</span>
+                  </button>
+                </div>
               </div>
             </aside>
           </Transition>
@@ -745,6 +917,16 @@ onUnmounted(() => {
             <div class="flex justify-center py-2 shrink-0 border-b select-none z-10 relative" style="background: var(--bg-surface); border-color: var(--border-subtle);">
               <div class="flex items-center gap-1.5 px-4 py-1.5 rounded-full border shadow-sm animate-scale-in" style="background: var(--bg-raised); border-color: var(--border);">
                 
+                <!-- Undo & Redo -->
+                <button type="button" class="ribbon-btn" title="Undo (Ctrl+Z)" @click="format('undo')">
+                  <Undo class="w-3.5 h-3.5" />
+                </button>
+                <button type="button" class="ribbon-btn" title="Redo (Ctrl+Y)" @click="format('redo')">
+                  <Redo class="w-3.5 h-3.5" />
+                </button>
+
+                <div class="ribbon-separator"></div>
+
                 <!-- Font Styles -->
                 <button type="button" class="ribbon-btn" :class="{ 'active': activeFormats.bold }" title="Bold (Ctrl+B)" @click="format('bold')">
                   <Bold class="w-3.5 h-3.5" />
@@ -823,6 +1005,7 @@ onUnmounted(() => {
                   class="w-full bg-transparent border-none text-4xl font-extrabold focus:outline-none tracking-tight mb-4 shrink-0"
                   style="color: var(--text-primary);"
                   @blur="touchedTitle = true"
+                  @input="markDirty(); triggerAutoSave()"
                 />
 
                 <!-- Note Category + Tag pills indicators block -->
@@ -860,9 +1043,126 @@ onUnmounted(() => {
                 <span>{{ charCount }} CHARACTERS</span>
               </div>
               <div class="flex items-center gap-2">
-                <span>SHORTCUTS: CTRL+B (BOLD) · CTRL+I (ITALIC) · CTRL+ENTER (SAVE)</span>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 hover:underline transition-colors"
+                  style="color: var(--text-muted);"
+                  @click="isShortcutsModalOpen = true"
+                >
+                  <HelpCircle class="w-3 h-3" style="color: var(--accent);" />
+                  <span>KEYBOARD SHORTCUTS (?)</span>
+                </button>
               </div>
             </footer>
+
+            <!-- Fixed bottom-right autosave pill -->
+            <Transition name="autosave-fade">
+              <div
+                v-if="autoSaveStatus !== 'idle'"
+                class="autosave-corner-pill"
+              >
+                <span v-if="autoSaveStatus === 'saving'" class="autosave-spinner" />
+                <svg v-else-if="autoSaveStatus === 'saved'" class="w-3.5 h-3.5" style="color: var(--accent);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+                <span :style="autoSaveStatus === 'saved' ? 'color: var(--accent)' : ''">
+                  {{ autoSaveStatus === 'saving' ? 'Autosaving...' : 'Autosaved' }}
+                </span>
+              </div>
+            </Transition>
+
+            <!-- Unsaved Changes Toast (bottom-center) -->
+            <Transition name="warn-toast">
+              <div
+                v-if="showUnsavedWarning"
+                class="unsaved-toast"
+              >
+                <div class="flex items-center gap-2" style="color: #fbbf24;">
+                  <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <span class="font-mono text-xs" style="color: var(--text-primary);">Unsaved changes</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="unsaved-toast-btn"
+                    style="color: var(--text-secondary);"
+                    @click="dismissWarning()"
+                  >Keep Editing</button>
+                  <button
+                    type="button"
+                    class="unsaved-toast-btn"
+                    style="color: #f87171; border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.07);"
+                    @click="confirmDiscard()"
+                  >Discard</button>
+                  <button
+                    type="button"
+                    class="unsaved-toast-btn"
+                    style="color: var(--accent-light); border-color: var(--accent); background: var(--accent-glow);"
+                    :disabled="!isValid"
+                    @click="handleSubmit()"
+                  >Save &amp; Close</button>
+                </div>
+              </div>
+            </Transition>
+
+            <!-- Keyboard Shortcuts Modal -->
+            <Transition name="fade-editor">
+              <div
+                v-if="isShortcutsModalOpen"
+                class="fixed inset-0 z-[80] flex items-center justify-center p-4"
+                style="background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);"
+                @click.self="isShortcutsModalOpen = false"
+              >
+                <div
+                  class="w-full max-w-md border rounded-xl shadow-2xl p-6 space-y-4 animate-scale-in"
+                  style="background: var(--bg-surface); border-color: var(--border);"
+                >
+                  <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--border-subtle);">
+                    <div class="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wider" style="color: var(--text-primary);">
+                      <HelpCircle class="w-4 h-4" style="color: var(--accent);" />
+                      Keyboard Shortcuts
+                    </div>
+                    <button
+                      type="button"
+                      class="p-1 border rounded transition-colors"
+                      style="background: var(--bg-raised); border-color: var(--border); color: var(--text-muted);"
+                      @click="isShortcutsModalOpen = false"
+                    >
+                      <X class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-1.5 font-mono text-xs">
+                    <div class="flex items-center justify-between py-1.5 border-b" style="border-color: var(--border-subtle);">
+                      <span style="color: var(--text-secondary);">Undo</span>
+                      <kbd class="px-2 py-0.5 border rounded text-[10px]" style="background: var(--bg-raised); border-color: var(--border); color: var(--text-primary);">Ctrl + Z</kbd>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 border-b" style="border-color: var(--border-subtle);">
+                      <span style="color: var(--text-secondary);">Redo</span>
+                      <kbd class="px-2 py-0.5 border rounded text-[10px]" style="background: var(--bg-raised); border-color: var(--border); color: var(--text-primary);">Ctrl + Y</kbd>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 border-b" style="border-color: var(--border-subtle);">
+                      <span style="color: var(--text-secondary);">Bold Text</span>
+                      <kbd class="px-2 py-0.5 border rounded text-[10px]" style="background: var(--bg-raised); border-color: var(--border); color: var(--text-primary);">Ctrl + B</kbd>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 border-b" style="border-color: var(--border-subtle);">
+                      <span style="color: var(--text-secondary);">Italic Text</span>
+                      <kbd class="px-2 py-0.5 border rounded text-[10px]" style="background: var(--bg-raised); border-color: var(--border); color: var(--text-primary);">Ctrl + I</kbd>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 border-b" style="border-color: var(--border-subtle);">
+                      <span style="color: var(--text-secondary);">Underline Text</span>
+                      <kbd class="px-2 py-0.5 border rounded text-[10px]" style="background: var(--bg-raised); border-color: var(--border); color: var(--text-primary);">Ctrl + U</kbd>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5 border-b" style="border-color: var(--border-subtle);">
+                      <span style="color: var(--text-secondary);">Save &amp; Close</span>
+                      <kbd class="px-2 py-0.5 border rounded text-[10px]" style="background: var(--bg-raised); border-color: var(--border); color: var(--text-primary);">Ctrl + Enter</kbd>
+                    </div>
+                    <div class="flex items-center justify-between py-1.5" style="border-color: var(--border-subtle);">
+                      <span style="color: var(--text-secondary);">Exit / Back</span>
+                      <kbd class="px-2 py-0.5 border rounded text-[10px]" style="background: var(--bg-raised); border-color: var(--border); color: var(--text-primary);">Esc</kbd>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Transition>
           </div>
         </div>
       </div>
@@ -1082,5 +1382,162 @@ onUnmounted(() => {
 
 .editor-sheet :deep(div.todo-item) {
   margin: 6px 0;
+}
+
+/* ── Auto-save corner pill ── */
+.autosave-corner-pill {
+  position: fixed;
+  bottom: 52px; /* sit just above the status bar */
+  right: 20px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-secondary);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── Auto-save toggle switch ── */
+.autosave-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 99px;
+  border: none;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.25s ease;
+  flex-shrink: 0;
+}
+
+.autosave-toggle--on {
+  background: var(--accent);
+}
+
+.autosave-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.25s cubic-bezier(0.19, 1, 0.22, 1);
+  display: block;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.autosave-toggle--on .autosave-thumb {
+  transform: translateX(16px);
+}
+
+/* ── Auto-save spinner ── */
+.autosave-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--accent);
+  animation: autosave-spin 0.7s linear infinite;
+}
+
+@keyframes autosave-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Auto-save fade transition ── */
+.autosave-fade-enter-active,
+.autosave-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.autosave-fade-enter-from,
+.autosave-fade-leave-to {
+  opacity: 0;
+}
+
+/* ── Unsaved changes toast ── */
+.unsaved-toast {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--bg-raised);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(245,158,11,0.08);
+  pointer-events: all;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.unsaved-toast-btn {
+  padding: 5px 12px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.unsaved-toast-btn:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.unsaved-toast-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* slide-up from bottom */
+.warn-toast-enter-active,
+.warn-toast-leave-active {
+  transition: all 0.25s cubic-bezier(0.19, 1, 0.22, 1);
+}
+.warn-toast-enter-from,
+.warn-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(16px);
+}
+.warn-toast-enter-to,
+.warn-toast-leave-from {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Unsaved warning banner slide ── */
+.warn-slide-enter-active,
+.warn-slide-leave-active {
+  transition: all 0.2s cubic-bezier(0.19, 1, 0.22, 1);
+  overflow: hidden;
+}
+.warn-slide-enter-from,
+.warn-slide-leave-to {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.warn-slide-enter-to,
+.warn-slide-leave-from {
+  max-height: 80px;
+  opacity: 1;
 }
 </style>
