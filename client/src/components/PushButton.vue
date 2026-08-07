@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // pushable button component — flat style, push physics on hover/click
 defineProps<{
-  variant?: 'primary' | 'danger';
+  variant?: 'primary' | 'danger' | 'warning';
   type?: 'button' | 'submit' | 'reset';
   disabled?: boolean;
 }>();
@@ -61,6 +61,12 @@ defineEmits<{ (e: 'click'): void }>();
   box-shadow: 0 4px 0 hsl(0, 72%, 28%);
 }
 
+/* ─── warning (amber/orange) ─── */
+.warning {
+  background: hsl(35, 92%, 48%);
+  box-shadow: 0 4px 0 hsl(35, 92%, 28%);
+}
+
 /* ─── hover: lift higher ─── */
 .pushable:hover {
   filter: brightness(108%);
@@ -73,6 +79,7 @@ defineEmits<{ (e: 'click'): void }>();
 
 .primary:hover  { box-shadow: 0 6px 0 hsl(161, 84%, 22%); }
 .danger:hover   { box-shadow: 0 6px 0 hsl(0, 72%, 28%); }
+.warning:hover  { box-shadow: 0 6px 0 hsl(35, 92%, 28%); }
 
 /* ─── active: press down ─── */
 .pushable:active {
@@ -85,6 +92,7 @@ defineEmits<{ (e: 'click'): void }>();
 
 .primary:active { box-shadow: 0 1px 0 hsl(161, 84%, 22%); }
 .danger:active  { box-shadow: 0 1px 0 hsl(0, 72%, 28%); }
+.warning:active { box-shadow: 0 1px 0 hsl(35, 92%, 28%); }
 
 /* ─── focus ─── */
 .pushable:focus-visible {
@@ -111,4 +119,5 @@ defineEmits<{ (e: 'click'): void }>();
 
 .primary.is-disabled { box-shadow: 0 4px 0 hsl(161, 84%, 22%); }
 .danger.is-disabled  { box-shadow: 0 4px 0 hsl(0, 72%, 28%); }
+.warning.is-disabled { box-shadow: 0 4px 0 hsl(35, 92%, 28%); }
 </style>

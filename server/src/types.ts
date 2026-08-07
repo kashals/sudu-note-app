@@ -5,6 +5,8 @@ export interface Note {
   content: string;
   category: string;
   is_pinned: number;
+  is_archived: number;
+  tags: string; // JSON string representation of string[]
   created_at: string;
   updated_at: string;
 }
@@ -15,6 +17,8 @@ export interface CreateNotePayload {
   content: string;
   category?: string;
   is_pinned?: number;
+  is_archived?: number;
+  tags?: string;
 }
 
 // update note payload
@@ -23,6 +27,8 @@ export interface UpdateNotePayload {
   content?: string;
   category?: string;
   is_pinned?: number;
+  is_archived?: number;
+  tags?: string;
 }
 
 // api error response

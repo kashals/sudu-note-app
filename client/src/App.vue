@@ -19,6 +19,11 @@ const isDeleteModalOpen = ref(false);
 const noteToDelete = ref<Note | null>(null);
 const isDeleting = ref(false);
 
+// ─── archive state ────────────────────────────────────────────
+const isArchiveModalOpen = ref(false);
+const noteToArchive = ref<Note | null>(null);
+const isArchiving = ref(false);
+
 // ─── feedback state ───────────────────────────────────────────
 const connectionError = ref<string | null>(null);
 const formError = ref<string | null>(null);
@@ -38,7 +43,8 @@ const breadcrumb = computed(() => {
   if (isFormOpen.value) {
     return ['System', 'Notes', noteToEdit.value ? 'Edit' : 'New'];
   }
-  if (isDeleteModalOpen.value) return ['System', 'Notes', 'Delete'];
+  if (isDeleteModalOpen.value) return ['System', 'Notes', 'Delete Forever'];
+  if (isArchiveModalOpen.value) return ['System', 'Notes', 'Archive'];
   return ['System', 'Notes'];
 });
 
@@ -90,20 +96,51 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     return;
   }
 
+  // Ctrl+K / Cmd+K → focus search bar
   const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    const searchInput = document.querySelector('.input-search') as HTMLInputElement;
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+    return;
+  }
 
-  // Ctrl/Cmd+N → new note (only when no modal is open)
-  if (mod && e.key === 'n' && !isFormOpen.value && !isDeleteModalOpen.value) {
+  // '/' → focus search bar (when not typing)
+  if (e.key === '/' && !isInput) {
+    e.preventDefault();
+    const searchInput = document.querySelector('.input-search') as HTMLInputElement;
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+    return;
+  }
+
+  // Alt+N → new note (only when no modal is open)
+  if (e.altKey && e.key.toLowerCase() === 'n' && !isFormOpen.value && !isDeleteModalOpen.value) {
     e.preventDefault();
     openCreateModal();
     return;
   }
 
-  // Escape → close any open modal
+  // Alt+R → refresh notes
+  if (e.altKey && e.key.toLowerCase() === 'r') {
+    e.preventDefault();
+    fetchNotes();
+    return;
+  }
+
+  // Escape → close any open modal or blur active inputs
   if (e.key === 'Escape') {
     if (isFormOpen.value)             isFormOpen.value = false;
     else if (isDeleteModalOpen.value) isDeleteModalOpen.value = false;
     else if (isShortcutsOpen.value)   isShortcutsOpen.value = false;
+    else if (isInput) {
+      (document.activeElement as HTMLElement)?.blur();
+    }
   }
 }
 
@@ -164,6 +201,8 @@ async function handleFormSubmit(payload: CreateNoteDto) {
         content: payload.content,
         category: payload.category ?? currentNote.category,
         is_pinned: payload.is_pinned ?? currentNote.is_pinned,
+        is_archived: payload.is_archived ?? currentNote.is_archived,
+        tags: payload.tags ?? currentNote.tags,
         updated_at: new Date().toISOString(),
       } as Note;
       notes.value = updatedNotes;
@@ -202,8 +241,10 @@ async function handleFormSubmit(payload: CreateNoteDto) {
       id: tempId,
       title: payload.title,
       content: payload.content,
-      category: payload.category ?? 'Document',
+      category: payload.category ?? 'Personal',
       is_pinned: payload.is_pinned ?? 0,
+      is_archived: payload.is_archived ?? 0,
+      tags: payload.tags ?? '[]',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -258,7 +299,9 @@ async function handleTogglePin(note: Note) {
       title: note.title,
       content: note.content,
       category: note.category,
-      is_pinned: newPinned
+      is_pinned: newPinned,
+      is_archived: note.is_archived,
+      tags: note.tags
     });
     const i = notes.value.findIndex((n) => n.id === updated.id);
     if (i !== -1) {
@@ -286,7 +329,77 @@ async function handleTogglePin(note: Note) {
   }
 }
 
-// ─── delete (optimistic) ──────────────────────────────────────
+// ─── archive note (optimistic) ────────────────────────────────
+function openArchiveModal(note: Note) {
+  noteToArchive.value = note;
+  isArchiveModalOpen.value = true;
+}
+
+async function handleConfirmArchive() {
+  if (!noteToArchive.value) return;
+  isArchiving.value = true;
+  agentSync();
+
+  const target = { ...noteToArchive.value };
+  const targetIndex = notes.value.findIndex((n) => n.id === target.id);
+  const originalNotes = [...notes.value];
+
+  // optimistic archive
+  notes.value = notes.value.map(n => n.id === target.id ? { ...n, is_archived: 1, is_pinned: 0 } : n);
+  sortNotes();
+  isArchiveModalOpen.value = false;
+  noteToArchive.value = null;
+
+  try {
+    await updateNote(target.id, {
+      title: target.title,
+      content: target.content,
+      category: target.category,
+      is_pinned: 0,
+      is_archived: 1,
+      tags: target.tags
+    });
+    showToast('Note moved to archive');
+    agentIdle();
+  } catch (err: any) {
+    notes.value = originalNotes;
+    sortNotes();
+    showToast('Reverting...', 'error');
+    agentIdle(0);
+  } finally {
+    isArchiving.value = false;
+  }
+}
+
+// ─── restore note (optimistic) ────────────────────────────────
+async function handleRestoreNote(note: Note) {
+  agentSync();
+  const originalNotes = [...notes.value];
+
+  // optimistic restore
+  notes.value = notes.value.map(n => n.id === note.id ? { ...n, is_archived: 0 } : n);
+  sortNotes();
+
+  try {
+    await updateNote(note.id, {
+      title: note.title,
+      content: note.content,
+      category: note.category,
+      is_pinned: note.is_pinned,
+      is_archived: 0,
+      tags: note.tags
+    });
+    showToast('Note restored to workspace');
+    agentIdle();
+  } catch (err: any) {
+    notes.value = originalNotes;
+    sortNotes();
+    showToast('Reverting...', 'error');
+    agentIdle(0);
+  }
+}
+
+// ─── delete forever (optimistic) ──────────────────────────────
 function openDeleteModal(note: Note) {
   noteToDelete.value = note;
   isDeleteModalOpen.value = true;
@@ -307,12 +420,15 @@ async function handleConfirmDelete() {
 
   try {
     await deleteNote(target.id);
-    showToast('Note deleted');
+    showToast('Note deleted permanently');
     agentIdle();
   } catch (err: any) {
     // revert
-    if (targetIndex !== -1) notes.value.splice(targetIndex, 0, target);
-    sortNotes();
+    if (targetIndex !== -1) {
+      notes.value = [...notes.value];
+      notes.value.splice(targetIndex, 0, target);
+      sortNotes();
+    }
     showToast('Reverting...', 'error');
     agentIdle(0);
   } finally {
@@ -473,6 +589,8 @@ onUnmounted(() => {
         @edit="openEditModal"
         @delete="openDeleteModal"
         @toggle-pin="handleTogglePin"
+        @archive="openArchiveModal"
+        @restore="handleRestoreNote"
         @refresh="fetchNotes"
       />
     </main>
@@ -497,12 +615,24 @@ onUnmounted(() => {
 
     <ConfirmModal
       :is-open="isDeleteModalOpen"
-      title="Confirm Deletion"
-      :message="`Permanently delete '${noteToDelete?.title}'? This action cannot be undone.`"
-      confirm-label="Delete"
+      title="Delete Note Forever"
+      :message="`Permanently delete '${noteToDelete?.title}'? This action is destructive and cannot be undone.`"
+      confirm-label="Delete Forever"
+      confirm-variant="danger"
       :is-processing="isDeleting"
       @confirm="handleConfirmDelete"
       @cancel="isDeleteModalOpen = false"
+    />
+
+    <ConfirmModal
+      :is-open="isArchiveModalOpen"
+      title="Move to Archive"
+      :message="`Are you sure you want to archive '${noteToArchive?.title}'? You can view, restore, or delete it forever from the Archive view.`"
+      confirm-label="Move to Archive"
+      confirm-variant="warning"
+      :is-processing="isArchiving"
+      @confirm="handleConfirmArchive"
+      @cancel="isArchiveModalOpen = false"
     />
 
     <!-- Keyboard Shortcuts Modal -->
@@ -541,19 +671,23 @@ onUnmounted(() => {
           <div class="p-5 space-y-3 font-mono text-xs">
             <div class="flex items-center justify-between py-1 border-b" style="border-color: var(--border-subtle);">
               <span style="color: var(--text-secondary);">Create Note</span>
-              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Ctrl</kbd> + <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">N</kbd></span>
+              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Alt</kbd> + <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">N</kbd></span>
+            </div>
+            <div class="flex items-center justify-between py-1 border-b" style="border-color: var(--border-subtle);">
+              <span style="color: var(--text-secondary);">Focus Search</span>
+              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Ctrl</kbd> + <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">K</kbd> <span class="opacity-40">or</span> <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">/</kbd></span>
             </div>
             <div class="flex items-center justify-between py-1 border-b" style="border-color: var(--border-subtle);">
               <span style="color: var(--text-secondary);">Save Note</span>
               <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Ctrl</kbd> + <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Enter</kbd></span>
             </div>
             <div class="flex items-center justify-between py-1 border-b" style="border-color: var(--border-subtle);">
-              <span style="color: var(--text-secondary);">Close Modal</span>
-              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Esc</kbd></span>
+              <span style="color: var(--text-secondary);">Refresh Workspace</span>
+              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Alt</kbd> + <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">R</kbd></span>
             </div>
             <div class="flex items-center justify-between py-1">
-              <span style="color: var(--text-secondary);">Shortcuts Menu</span>
-              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">?</kbd></span>
+              <span style="color: var(--text-secondary);">Shortcuts / Cancel</span>
+              <span><kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">?</kbd> <span class="opacity-40">or</span> <kbd class="px-1.5 py-0.5 border rounded" style="border-color: var(--border); background: var(--bg-raised);">Esc</kbd></span>
             </div>
           </div>
         </div>

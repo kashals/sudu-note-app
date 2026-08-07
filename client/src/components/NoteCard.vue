@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Edit2, Trash2, Clock, Pin, FileText, Maximize2 } from '@lucide/vue';
+import { Edit2, Trash2, Clock, Pin, FileText, Maximize2, RotateCcw } from '@lucide/vue';
 import type { Note } from '../types/note';
 
 // component props
@@ -13,8 +13,10 @@ const props = defineProps<{
 // component emits
 const emit = defineEmits<{
   (e: 'edit', note: Note): void;
-  (e: 'delete', note: Note): void;
+  (e: 'delete', note: Note): void; // represents "Delete Forever" if archived, or standard delete
   (e: 'toggle-pin', note: Note): void;
+  (e: 'archive', note: Note): void;
+  (e: 'restore', note: Note): void;
 }>();
 
 // format timestamp
@@ -35,30 +37,20 @@ function formatDate(isoString: string): string {
 // category style helper
 const categoryStyle = computed(() => {
   switch (props.note.category) {
-    case 'Draft':
-      return {
-        background: 'var(--bg-raised)',
-        borderColor: 'var(--border)',
-        color: 'var(--text-secondary)'
-      };
-    case 'Task':
-      return {
-        background: 'rgba(16, 185, 129, 0.06)',
-        borderColor: 'rgba(16, 185, 129, 0.25)',
-        color: 'var(--accent-light)'
-      };
-    case 'Archive':
-      return {
-        background: 'rgba(161, 161, 170, 0.04)',
-        borderColor: 'rgba(161, 161, 170, 0.2)',
-        color: 'var(--text-muted)'
-      };
-    default: // Document
-      return {
-        background: 'rgba(37, 99, 235, 0.06)',
-        borderColor: 'rgba(37, 99, 235, 0.25)',
-        color: '#60a5fa'
-      };
+    case 'Personal':
+      return { background: 'rgba(6, 182, 212, 0.08)', borderColor: 'rgba(6, 182, 212, 0.3)', color: '#22d3ee' };
+    case 'Work':
+      return { background: 'rgba(99, 102, 241, 0.08)', borderColor: 'rgba(99, 102, 241, 0.3)', color: '#818cf8' };
+    case 'Ideas':
+      return { background: 'rgba(168, 85, 247, 0.08)', borderColor: 'rgba(168, 85, 247, 0.3)', color: '#c084fc' };
+    case 'Research':
+      return { background: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.3)', color: 'var(--accent-light)' };
+    case 'Meeting':
+      return { background: 'rgba(249, 115, 22, 0.08)', borderColor: 'rgba(249, 115, 22, 0.3)', color: '#fb923c' };
+    case 'Project':
+      return { background: 'rgba(244, 63, 94, 0.08)', borderColor: 'rgba(244, 63, 94, 0.3)', color: '#fb7185' };
+    default: // custom category
+      return { background: 'rgba(20, 184, 166, 0.08)', borderColor: 'rgba(20, 184, 166, 0.3)', color: '#2dd4bf' };
   }
 });
 
@@ -74,13 +66,41 @@ const wordCount = computed(() => {
 });
 
 const charCount = computed(() => props.note.content.length);
+
+// tags parser
+const parsedTags = computed<string[]>(() => {
+  try {
+    return JSON.parse(props.note.tags || '[]');
+  } catch {
+    return [];
+  }
+});
+
+// tags style builder
+function getTagStyle(tag: string) {
+  const norm = tag.trim().toLowerCase();
+  if (norm === 'important') {
+    return { background: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.25)', color: '#f87171' };
+  }
+  if (norm === 'urgent') {
+    return { background: 'rgba(249, 115, 22, 0.08)', borderColor: 'rgba(249, 115, 22, 0.25)', color: '#fb923c' };
+  }
+  if (norm === 'review') {
+    return { background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.25)', color: '#60a5fa' };
+  }
+  if (norm === 'later') {
+    return { background: 'rgba(168, 85, 247, 0.08)', borderColor: 'rgba(168, 85, 247, 0.25)', color: '#c084fc' };
+  }
+  // custom tag colors
+  return { background: 'rgba(16, 185, 129, 0.04)', borderColor: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-light)' };
+}
 </script>
 
 <template>
   <!-- ── list row layout ── -->
   <div
     v-if="viewMode === 'list'"
-    class="group flex items-center justify-between gap-4 px-4 py-3 border transition-all duration-200 cursor-default"
+    class="group flex items-center justify-between gap-4 px-4 py-3 border transition-all duration-200 cursor-default animate-fade-up"
     style="background: var(--bg-surface); border-color: var(--border); border-radius: 6px;"
     @mouseover="($el as HTMLElement).style.borderColor = 'var(--accent)'"
     @mouseleave="($el as HTMLElement).style.borderColor = 'var(--border)'"
@@ -89,6 +109,7 @@ const charCount = computed(() => props.note.content.length);
       <!-- ID & Pin -->
       <div class="flex items-center gap-2 shrink-0">
         <button
+          v-if="note.is_archived !== 1"
           type="button"
           class="p-0.5 hover:scale-110 transition-transform"
           :title="note.is_pinned ? 'Unpin note' : 'Pin note'"
@@ -108,13 +129,25 @@ const charCount = computed(() => props.note.content.length);
         </span>
       </div>
 
-      <!-- Tag -->
+      <!-- Tag (Category) -->
       <span
         class="hidden sm:inline-block px-1.5 py-0.5 border text-[9px] font-mono rounded"
         :style="categoryStyle"
       >
         {{ note.category }}
       </span>
+
+      <!-- Note Tags -->
+      <div v-if="parsedTags.length > 0" class="hidden md:flex items-center gap-1.5">
+        <span
+          v-for="tag in parsedTags"
+          :key="tag"
+          class="px-1.5 py-0.2 border text-[8px] font-mono rounded"
+          :style="getTagStyle(tag)"
+        >
+          {{ tag }}
+        </span>
+      </div>
 
       <!-- Title & Preview -->
       <h4 class="text-sm font-semibold truncate max-w-[200px]" style="color: var(--text-primary);">
@@ -130,44 +163,75 @@ const charCount = computed(() => props.note.content.length);
       <span class="hidden md:block font-mono text-[10px]" style="color: var(--text-muted);">
         {{ formatDate(note.updated_at) }}
       </span>
-      <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <button
-          type="button"
-          class="p-1.5 transition-colors"
-          style="color: var(--text-muted);"
-          title="Edit Note"
-          @mouseover="($el as HTMLElement).style.color = 'var(--accent)'"
-          @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
-          @click="emit('edit', note)"
-        >
-          <Edit2 class="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          class="p-1.5 transition-colors"
-          style="color: var(--text-muted);"
-          title="Delete Note"
-          @mouseover="($el as HTMLElement).style.color = '#f87171'"
-          @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
-          @click="emit('delete', note)"
-        >
-          <Trash2 class="h-3.5 w-3.5" />
-        </button>
+      
+      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <!-- archived note actions -->
+        <template v-if="note.is_archived === 1">
+          <button
+            type="button"
+            class="p-1.5 transition-colors"
+            style="color: var(--text-muted);"
+            title="Restore Note"
+            @mouseover="($el as HTMLElement).style.color = 'var(--accent)'"
+            @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
+            @click.stop="emit('restore', note)"
+          >
+            <RotateCcw class="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            class="p-1.5 transition-colors"
+            style="color: var(--text-muted);"
+            title="Delete Forever"
+            @mouseover="($el as HTMLElement).style.color = '#f87171'"
+            @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
+            @click.stop="emit('delete', note)"
+          >
+            <Trash2 class="h-3.5 w-3.5" />
+          </button>
+        </template>
+
+        <!-- active note actions -->
+        <template v-else>
+          <button
+            type="button"
+            class="p-1.5 transition-colors"
+            style="color: var(--text-muted);"
+            title="Edit Note"
+            @mouseover="($el as HTMLElement).style.color = 'var(--accent)'"
+            @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
+            @click.stop="emit('edit', note)"
+          >
+            <Edit2 class="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            class="p-1.5 transition-colors"
+            style="color: var(--text-muted);"
+            title="Archive Note"
+            @mouseover="($el as HTMLElement).style.color = '#fb923c'"
+            @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
+            @click.stop="emit('archive', note)"
+          >
+            <Trash2 class="h-3.5 w-3.5" />
+          </button>
+        </template>
       </div>
     </div>
   </div>
 
   <!-- ── grid card layout ── -->
-  <div v-else class="main-card-layout">
+  <div v-else class="main-card-layout animate-fade-up">
     <!-- Stretchy background/border panel -->
     <div class="card-bg"></div>
 
     <!-- Content preview container -->
-    <div class="card-content-preview" @click="emit('edit', note)">
+    <div class="card-content-preview" @click="note.is_archived !== 1 && emit('edit', note)">
       <div class="flex items-center justify-between min-w-0 gap-3">
         <!-- left: ID + Pin indicator -->
         <div class="flex items-center gap-2 min-w-0">
           <button
+            v-if="note.is_archived !== 1"
             type="button"
             class="p-0.5 hover:scale-110 transition-transform shrink-0"
             :title="note.is_pinned ? 'Unpin note' : 'Pin note'"
@@ -194,23 +258,34 @@ const charCount = computed(() => props.note.content.length);
         </div>
 
         <!-- right fullscreen zoom icon -->
-        <div class="fl-action">
+        <div class="fl-action" v-if="note.is_archived !== 1">
           <div class="fullscreen" title="Open Note">
             <Maximize2 class="fullscreen_svg" />
           </div>
         </div>
       </div>
 
-      <!-- note content preview -->
-      <div class="pt-2.5">
-        <p class="preview-text text-xs leading-relaxed" style="color: var(--text-secondary);">
+      <!-- note content & tags preview -->
+      <div class="pt-2.5 flex flex-col h-[75px]">
+        <!-- note tags inside card preview -->
+        <div v-if="parsedTags.length > 0" class="flex flex-wrap gap-1 mb-2 shrink-0">
+          <span
+            v-for="tag in parsedTags"
+            :key="tag"
+            class="px-1.5 py-0.2 border text-[8px] font-mono rounded"
+            :style="getTagStyle(tag)"
+          >
+            {{ tag }}
+          </span>
+        </div>
+        <p class="preview-text text-xs leading-relaxed flex-1" style="color: var(--text-secondary);">
           {{ note.content }}
         </p>
       </div>
     </div>
 
-    <!-- Data row: Icon + Title + Updated date (Visually outside at rest, inside on hover) -->
-    <div class="card-meta-row" @click="emit('edit', note)">
+    <!-- Data row: Icon + Title + Updated date -->
+    <div class="card-meta-row" @click="note.is_archived !== 1 && emit('edit', note)">
       <div class="card-type-icon">
         <FileText class="w-4 h-4" style="color: var(--accent);" />
       </div>
@@ -228,12 +303,24 @@ const charCount = computed(() => props.note.content.length);
       <div class="metric-pill char-count" title="Character count">
         <span class="metric-text font-mono">{{ charCount }} chars</span>
       </div>
-      <button class="action-icon edit" title="Edit Note" @click.stop="emit('edit', note)">
-        <Edit2 class="w-3 h-3" />
-      </button>
-      <button class="action-icon delete" title="Delete Note" @click.stop="emit('delete', note)">
-        <Trash2 class="w-3 h-3" />
-      </button>
+
+      <!-- Actions based on archive state -->
+      <template v-if="note.is_archived === 1">
+        <button class="action-icon restore" title="Restore Note" @click.stop="emit('restore', note)">
+          <RotateCcw class="w-3 h-3" />
+        </button>
+        <button class="action-icon delete-forever" title="Delete Forever" @click.stop="emit('delete', note)">
+          <Trash2 class="w-3 h-3" />
+        </button>
+      </template>
+      <template v-else>
+        <button class="action-icon edit" title="Edit Note" @click.stop="emit('edit', note)">
+          <Edit2 class="w-3 h-3" />
+        </button>
+        <button class="action-icon archive" title="Move to Archive" @click.stop="emit('archive', note)">
+          <Trash2 class="w-3 h-3" />
+        </button>
+      </template>
     </div>
   </div>
 </template>
@@ -433,13 +520,19 @@ const charCount = computed(() => props.note.content.length);
   transition: all 0.2s ease;
 }
 
-.action-icon.edit:hover {
+.action-icon.edit:hover, .action-icon.restore:hover {
   background-color: var(--accent-glow);
   border-color: var(--accent);
   color: var(--accent-light);
 }
 
-.action-icon.delete:hover {
+.action-icon.archive:hover {
+  background-color: rgba(249, 115, 22, 0.12);
+  border-color: #c2410c;
+  color: #fb923c;
+}
+
+.action-icon.delete-forever:hover {
   background-color: rgba(127, 29, 29, 0.15);
   border-color: #7f1d1d;
   color: #f87171;

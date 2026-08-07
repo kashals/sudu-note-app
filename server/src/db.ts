@@ -56,4 +56,18 @@ async function initSchema(db: Database): Promise<void> {
   } catch (err) {
     // column already exists
   }
+
+  // Add is_archived column if missing
+  try {
+    await db.exec("ALTER TABLE notes ADD COLUMN is_archived INTEGER DEFAULT 0;");
+  } catch (err) {
+    // column already exists
+  }
+
+  // Add tags column if missing
+  try {
+    await db.exec("ALTER TABLE notes ADD COLUMN tags TEXT DEFAULT '[]';");
+  } catch (err) {
+    // column already exists
+  }
 }

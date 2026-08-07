@@ -8,6 +8,7 @@ defineProps<{
   title: string;
   message: string;
   confirmLabel?: string;
+  confirmVariant?: 'danger' | 'primary' | 'warning';
   isProcessing?: boolean;
 }>();
 
@@ -40,8 +41,13 @@ const emit = defineEmits<{
         <!-- header -->
         <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--border);">
           <div class="flex items-center gap-2.5">
-            <AlertTriangle class="h-4 w-4 shrink-0" style="color: #f87171;" />
-            <h3 class="text-sm font-semibold" style="color: var(--text-primary);">{{ title }}</h3>
+            <AlertTriangle
+              class="h-4 w-4 shrink-0"
+              :style="{
+                color: confirmVariant === 'warning' ? '#fb923c' : confirmVariant === 'primary' ? 'var(--accent)' : '#f87171'
+              }"
+            />
+            <h3 class="text-sm font-semibold truncate max-w-[280px]" style="color: var(--text-primary);">{{ title }}</h3>
           </div>
           <button
             type="button"
@@ -54,7 +60,7 @@ const emit = defineEmits<{
         </div>
 
         <!-- message -->
-        <div class="px-5 py-4 text-xs leading-relaxed" style="color: var(--text-secondary);">
+        <div class="px-5 py-4 text-xs leading-relaxed break-words" style="color: var(--text-secondary); word-break: break-word; overflow-wrap: break-word;">
           {{ message }}
         </div>
 
@@ -73,7 +79,7 @@ const emit = defineEmits<{
             Cancel
           </button>
           <PushButton
-            variant="danger"
+            :variant="confirmVariant || 'danger'"
             :disabled="isProcessing"
             @click="emit('confirm')"
           >

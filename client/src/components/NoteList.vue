@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { Search, Grid, List, FileText, Plus, Check, Pin } from '@lucide/vue';
+import { Search, Grid, List, FileText, Plus, Check, Pin, Archive } from '@lucide/vue';
 import type { Note } from '../types/note';
 import NoteCard from './NoteCard.vue';
 import PushButton from './PushButton.vue';
@@ -17,6 +17,8 @@ const emit = defineEmits<{
   (e: 'edit', note: Note): void;
   (e: 'delete', note: Note): void;
   (e: 'toggle-pin', note: Note): void;
+  (e: 'archive', note: Note): void;
+  (e: 'restore', note: Note): void;
   (e: 'refresh'): void;
 }>();
 
@@ -25,6 +27,7 @@ const VIEW_MODE_KEY = 'sudu_note_view_mode';
 const searchInput = ref('');
 const searchQuery = ref('');
 const viewMode = ref<'grid' | 'list'>('grid');
+const showArchived = ref(false);
 
 // ─── pagination state ─────────────────────────────────────────
 const currentPage = ref(1);
@@ -63,8 +66,12 @@ watch(searchInput, (val) => {
   debounceTimer = setTimeout(() => { searchQuery.value = val; }, 250);
 });
 
-// reset pagination page on search query change
+// reset pagination page on search query change or archive view change
 watch(searchQuery, () => {
+  currentPage.value = 1;
+});
+
+watch(showArchived, () => {
   currentPage.value = 1;
 });
 
@@ -87,22 +94,27 @@ onMounted(() => {
 // filtered notes list
 const filteredNotes = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
-  if (!query) return props.notes;
-  return props.notes.filter(
+  const targetStatus = showArchived.value ? 1 : 0;
+  const statusFiltered = props.notes.filter(n => (n.is_archived || 0) === targetStatus);
+
+  if (!query) return statusFiltered;
+  return statusFiltered.filter(
     (note) =>
       note.title.toLowerCase().includes(query) ||
       note.content.toLowerCase().includes(query)
   );
 });
 
-// separate pinned vs unpinned notes
-const pinnedNotes = computed(() =>
-  filteredNotes.value.filter((note) => note.is_pinned === 1)
-);
+// separate pinned vs unpinned notes (pinned notes are disabled in archive mode)
+const pinnedNotes = computed(() => {
+  if (showArchived.value) return [];
+  return filteredNotes.value.filter((note) => note.is_pinned === 1);
+});
 
-const unpinnedNotes = computed(() =>
-  filteredNotes.value.filter((note) => note.is_pinned !== 1)
-);
+const unpinnedNotes = computed(() => {
+  if (showArchived.value) return filteredNotes.value;
+  return filteredNotes.value.filter((note) => note.is_pinned !== 1);
+});
 
 // unpinned notes pagination
 const totalPages = computed(() =>
@@ -209,6 +221,20 @@ function staggerClass(index: number): string {
           </button>
         </div>
 
+        <!-- show archived workspace switch -->
+        <button
+          type="button"
+          class="flex items-center gap-1.5 px-3 py-2 border rounded text-xs font-mono transition-colors"
+          :style="showArchived
+            ? 'background: rgba(249, 115, 22, 0.1); border-color: #fb923c; color: #fb923c;'
+            : 'background: var(--bg-surface); border-color: var(--border); color: var(--text-secondary);'"
+          :title="showArchived ? 'View active workspace' : 'View archived notes'"
+          @click="showArchived = !showArchived"
+        >
+          <Archive class="h-3.5 w-3.5" />
+          <span>{{ showArchived ? 'Active Notes' : 'Archive' }}</span>
+        </button>
+
         <!-- new note -->
         <PushButton variant="primary" @click="emit('create')">
           <Plus class="h-3.5 w-3.5" />
@@ -279,18 +305,22 @@ function staggerClass(index: number): string {
       </div>
     </div>
 
-    <!-- empty state: search returned zero results -->
+    <!-- empty state: search returned zero results or empty archive -->
     <div
       v-else-if="filteredNotes.length === 0"
       class="animate-fade-up flex flex-col items-center justify-center border border-dashed py-20 text-center"
       style="border-color: var(--border); border-radius: 8px;"
     >
       <Search class="h-8 w-8 mb-3" style="color: var(--text-muted);" />
-      <p class="font-mono text-sm" style="color: var(--text-muted);">// No matching records</p>
+      <p class="font-mono text-sm" style="color: var(--text-muted);">
+        // {{ showArchived ? 'Archive is empty' : 'No matching records' }}
+      </p>
       <p class="font-mono text-xs mt-1" style="color: var(--text-muted); opacity: 0.6;">
-        No results for "<span style="color: var(--accent-light);">{{ searchQuery }}</span>"
+        <span v-if="showArchived">There are no archived workspace records.</span>
+        <span v-else>No results for "<span style="color: var(--accent-light);">{{ searchQuery }}</span>"</span>
       </p>
       <button
+        v-if="!showArchived"
         type="button"
         class="mt-4 font-mono text-[11px] transition-colors"
         style="color: var(--text-muted);"
@@ -302,8 +332,8 @@ function staggerClass(index: number): string {
 
     <!-- render notes workspace (split pinned / unpinned) -->
     <div v-else class="space-y-6">
-      <!-- ── pinned workspace ── -->
-      <div v-if="pinnedNotes.length > 0" class="space-y-3">
+      <!-- ── pinned workspace (Only active notes can be pinned) ── -->
+      <div v-if="pinnedNotes.length > 0 && !showArchived" class="space-y-3">
         <div class="flex items-center gap-2 border-b pb-2" style="border-color: var(--border-subtle);">
           <Pin class="h-3.5 w-3.5" style="color: var(--accent);" />
           <h3 class="text-[10px] font-extrabold uppercase tracking-widest" style="color: var(--text-secondary);">
@@ -317,7 +347,7 @@ function staggerClass(index: number): string {
         <Transition name="fade-layout" mode="out-in">
           <div :key="viewMode" :class="viewMode === 'grid' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-2'">
             <NoteCard
-              v-for="(note, index) in pinnedNotes"
+              v-for="(note) in pinnedNotes"
               :key="note.id"
               :note="note"
               :view-mode="viewMode"
@@ -326,6 +356,8 @@ function staggerClass(index: number): string {
               @edit="emit('edit', $event)"
               @delete="emit('delete', $event)"
               @toggle-pin="emit('toggle-pin', $event)"
+              @archive="emit('archive', $event)"
+              @restore="emit('restore', $event)"
             />
           </div>
         </Transition>
@@ -333,9 +365,9 @@ function staggerClass(index: number): string {
 
       <!-- ── all notes workspace ── -->
       <div class="space-y-3">
-        <div v-if="pinnedNotes.length > 0" class="flex items-center gap-2 border-b pb-2 pt-2" style="border-color: var(--border-subtle);">
+        <div class="flex items-center gap-2 border-b pb-2 pt-2" style="border-color: var(--border-subtle);">
           <h3 class="text-[10px] font-extrabold uppercase tracking-widest" style="color: var(--text-secondary);">
-            All Workspace Notes
+            {{ showArchived ? 'Archived Notes' : 'All Workspace Notes' }}
           </h3>
           <span class="font-mono text-[9px] px-1.5 py-0.5 rounded border" style="background: var(--bg-surface); border-color: var(--border); color: var(--text-muted);">
             {{ unpinnedNotes.length }}
@@ -354,6 +386,8 @@ function staggerClass(index: number): string {
               @edit="emit('edit', $event)"
               @delete="emit('delete', $event)"
               @toggle-pin="emit('toggle-pin', $event)"
+              @archive="emit('archive', $event)"
+              @restore="emit('restore', $event)"
             />
           </div>
         </Transition>

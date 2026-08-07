@@ -44,13 +44,22 @@ const createNoteSchema = z.object({
     .string()
     .trim()
     .max(50)
-    .default('Document'),
+    .default('Personal'),
   is_pinned: z
     .number()
     .int()
     .min(0)
     .max(1)
-    .default(0)
+    .default(0),
+  is_archived: z
+    .number()
+    .int()
+    .min(0)
+    .max(1)
+    .default(0),
+  tags: z
+    .string()
+    .default('[]')
 });
 
 const updateNoteSchema = z.object({
@@ -74,6 +83,15 @@ const updateNoteSchema = z.object({
     .int()
     .min(0)
     .max(1)
+    .optional(),
+  is_archived: z
+    .number()
+    .int()
+    .min(0)
+    .max(1)
+    .optional(),
+  tags: z
+    .string()
     .optional()
 });
 
@@ -87,7 +105,7 @@ app.get('/api/notes', async (_req: Request, res: Response, next: NextFunction) =
   try {
     const db = await getDb();
     const notes = await db.all<Note[]>(
-      'SELECT id, title, content, category, is_pinned, created_at, updated_at FROM notes ORDER BY is_pinned DESC, updated_at DESC'
+      'SELECT id, title, content, category, is_pinned, is_archived, tags, created_at, updated_at FROM notes ORDER BY is_pinned DESC, updated_at DESC'
     );
     res.json(notes);
   } catch (error) {
@@ -101,7 +119,7 @@ app.get('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
     const { id } = req.params;
     const db = await getDb();
     const note = await db.get<Note>(
-      'SELECT id, title, content, category, is_pinned, created_at, updated_at FROM notes WHERE id = ?',
+      'SELECT id, title, content, category, is_pinned, is_archived, tags, created_at, updated_at FROM notes WHERE id = ?',
       [id]
     );
 
@@ -128,14 +146,14 @@ app.post('/api/notes', async (req: Request, res: Response, next: NextFunction) =
       return;
     }
 
-    const { title, content, category, is_pinned } = parseResult.data;
+    const { title, content, category, is_pinned, is_archived, tags } = parseResult.data;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
     const db = await getDb();
     await db.run(
-      'INSERT INTO notes (id, title, content, category, is_pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, title, content, category, is_pinned, now, now]
+      'INSERT INTO notes (id, title, content, category, is_pinned, is_archived, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title, content, category, is_pinned, is_archived, tags, now, now]
     );
 
     const newNote: Note = {
@@ -144,6 +162,8 @@ app.post('/api/notes', async (req: Request, res: Response, next: NextFunction) =
       content,
       category,
       is_pinned,
+      is_archived,
+      tags,
       created_at: now,
       updated_at: now
     };
@@ -169,25 +189,27 @@ app.put('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
     }
 
     const db = await getDb();
-    const existingNote = await db.get<Note>('SELECT id, category, is_pinned FROM notes WHERE id = ?', [id]);
+    const existingNote = await db.get<Note>('SELECT id, category, is_pinned, is_archived, tags FROM notes WHERE id = ?', [id]);
 
     if (!existingNote) {
       res.status(404).json({ error: 'note not found' });
       return;
     }
 
-    const { title, content, category, is_pinned } = parseResult.data;
+    const { title, content, category, is_pinned, is_archived, tags } = parseResult.data;
     const finalCategory = category !== undefined ? category : existingNote.category;
     const finalIsPinned = is_pinned !== undefined ? is_pinned : existingNote.is_pinned;
+    const finalIsArchived = is_archived !== undefined ? is_archived : existingNote.is_archived;
+    const finalTags = tags !== undefined ? tags : existingNote.tags;
     const now = new Date().toISOString();
 
     await db.run(
-      'UPDATE notes SET title = ?, content = ?, category = ?, is_pinned = ?, updated_at = ? WHERE id = ?',
-      [title, content, finalCategory, finalIsPinned, now, id]
+      'UPDATE notes SET title = ?, content = ?, category = ?, is_pinned = ?, is_archived = ?, tags = ?, updated_at = ? WHERE id = ?',
+      [title, content, finalCategory, finalIsPinned, finalIsArchived, finalTags, now, id]
     );
 
     const updatedNote = await db.get<Note>(
-      'SELECT id, title, content, category, is_pinned, created_at, updated_at FROM notes WHERE id = ?',
+      'SELECT id, title, content, category, is_pinned, is_archived, tags, created_at, updated_at FROM notes WHERE id = ?',
       [id]
     );
 
