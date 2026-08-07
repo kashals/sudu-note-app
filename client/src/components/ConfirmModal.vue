@@ -18,52 +18,71 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div
-    v-if="isOpen"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
-    @click.self="emit('cancel')"
+  <Transition
+    enter-active-class="transition-opacity duration-200"
+    enter-from-class="opacity-0"
+    enter-to-class="opacity-100"
+    leave-active-class="transition-opacity duration-150"
+    leave-from-class="opacity-100"
+    leave-to-class="opacity-0"
   >
-    <div class="w-full max-w-md border border-zinc-800 bg-zinc-900">
-      <!-- modal header -->
-      <div class="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-        <div class="flex items-center gap-2.5">
-          <AlertTriangle class="h-4 w-4 text-red-500 shrink-0" />
-          <h3 class="text-sm font-semibold text-zinc-100">{{ title }}</h3>
+    <div
+      v-if="isOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style="background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);"
+      @click.self="emit('cancel')"
+    >
+      <div
+        class="animate-scale-in w-full max-w-md border"
+        style="background: var(--bg-surface); border-color: var(--border);"
+      >
+        <!-- header -->
+        <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--border);">
+          <div class="flex items-center gap-2.5">
+            <AlertTriangle class="h-4 w-4 shrink-0" style="color: #f87171;" />
+            <h3 class="text-sm font-semibold" style="color: var(--text-primary);">{{ title }}</h3>
+          </div>
+          <button
+            type="button"
+            class="transition-colors"
+            style="color: var(--text-muted);"
+            @click="emit('cancel')"
+          >
+            <X class="h-4 w-4" />
+          </button>
         </div>
-        <button
-          type="button"
-          class="text-zinc-600 hover:text-zinc-300 transition-colors"
-          @click="emit('cancel')"
-        >
-          <X class="h-4 w-4" />
-        </button>
-      </div>
 
-      <!-- message body -->
-      <div class="px-5 py-4 text-xs text-zinc-400 leading-relaxed">
-        {{ message }}
-      </div>
+        <!-- message -->
+        <div class="px-5 py-4 text-xs leading-relaxed" style="color: var(--text-secondary);">
+          {{ message }}
+        </div>
 
-      <!-- action row -->
-      <div class="flex items-center justify-end gap-2 border-t border-zinc-800 px-5 py-4">
-        <button
-          type="button"
-          class="border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 disabled:opacity-40 transition-colors"
-          :disabled="isProcessing"
-          @click="emit('cancel')"
+        <!-- actions -->
+        <div
+          class="flex items-center justify-end gap-2 border-t px-5 py-4"
+          style="border-color: var(--border);"
         >
-          cancel
-        </button>
-        <button
-          type="button"
-          class="border border-red-900 bg-red-950/20 px-4 py-2 text-xs font-medium text-red-400 hover:border-red-700 hover:bg-red-950/40 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          :disabled="isProcessing"
-          @click="emit('confirm')"
-        >
-          <span v-if="isProcessing" class="font-mono">processing...</span>
-          <span v-else>{{ confirmLabel || 'delete' }}</span>
-        </button>
+          <button
+            type="button"
+            class="px-4 py-2 text-xs font-medium border transition-colors disabled:opacity-40"
+            style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary);"
+            :disabled="isProcessing"
+            @click="emit('cancel')"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 text-xs font-medium border transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+            style="background: rgba(127,29,29,0.2); border-color: #7f1d1d; color: #fca5a5;"
+            :disabled="isProcessing"
+            @click="emit('confirm')"
+          >
+            <span v-if="isProcessing" class="font-mono">Processing...</span>
+            <span v-else>{{ confirmLabel || 'Delete' }}</span>
+          </button>
+        </div>
       </div>
     </div>
-  </div>
+  </Transition>
 </template>

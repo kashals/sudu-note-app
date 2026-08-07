@@ -23,182 +23,203 @@ const content = ref('');
 const touchedTitle = ref(false);
 const touchedContent = ref(false);
 
-// character limits
 const maxTitleLength = 200;
 const maxContentLength = 10000;
 
-// populate form on edit
+// populate on edit
 watch(
   () => props.noteToEdit,
   (newNote) => {
-    if (newNote) {
-      title.value = newNote.title;
-      content.value = newNote.content;
-    } else {
-      title.value = '';
-      content.value = '';
-    }
+    title.value = newNote?.title ?? '';
+    content.value = newNote?.content ?? '';
     touchedTitle.value = false;
     touchedContent.value = false;
   },
   { immediate: true }
 );
 
-// word count helper
+// word count
 function countWords(str: string): number {
-  const trimmed = str.trim();
-  if (!trimmed) return 0;
-  return trimmed.split(/\s+/).length;
+  const t = str.trim();
+  return t ? t.split(/\s+/).length : 0;
 }
 
 // title validation
 const titleError = computed(() => {
   if (!touchedTitle.value) return null;
-  if (!title.value.trim()) return 'title is required';
-  if (title.value.length > maxTitleLength) return `title cannot exceed ${maxTitleLength} characters`;
+  if (!title.value.trim()) return 'Title is required';
+  if (title.value.length > maxTitleLength) return `Title cannot exceed ${maxTitleLength} characters`;
   return null;
 });
 
 // content validation
 const contentError = computed(() => {
   if (!touchedContent.value) return null;
-  if (!content.value.trim()) return 'content is required';
-  if (content.value.length > maxContentLength) return `content cannot exceed ${maxContentLength} characters`;
+  if (!content.value.trim()) return 'Content is required';
+  if (content.value.length > maxContentLength) return `Content cannot exceed ${maxContentLength} characters`;
   return null;
 });
 
 // form validity
-const isValid = computed(() => {
-  return (
-    title.value.trim().length > 0 &&
-    title.value.length <= maxTitleLength &&
-    content.value.trim().length > 0 &&
-    content.value.length <= maxContentLength
-  );
-});
+const isValid = computed(() =>
+  title.value.trim().length > 0 &&
+  title.value.length <= maxTitleLength &&
+  content.value.trim().length > 0 &&
+  content.value.length <= maxContentLength
+);
 
-// content word count
 const contentWordCount = computed(() => countWords(content.value));
 
 // handle submit
 function handleSubmit() {
   touchedTitle.value = true;
   touchedContent.value = true;
-
   if (!isValid.value || props.isSubmitting) return;
-
-  emit('submit', {
-    title: title.value.trim(),
-    content: content.value.trim()
-  });
+  emit('submit', { title: title.value.trim(), content: content.value.trim() });
 }
 </script>
 
 <template>
-  <div
-    v-if="isOpen"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
-    @click.self="emit('cancel')"
+  <Transition
+    enter-active-class="transition-opacity duration-200"
+    enter-from-class="opacity-0"
+    enter-to-class="opacity-100"
+    leave-active-class="transition-opacity duration-150"
+    leave-from-class="opacity-100"
+    leave-to-class="opacity-0"
   >
-    <div class="w-full max-w-2xl border border-zinc-800 bg-zinc-900">
-      <!-- modal header -->
-      <div class="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
-        <h3 class="text-sm font-semibold text-zinc-100 tracking-wide">
-          {{ noteToEdit ? 'edit note' : 'create note' }}
-        </h3>
-        <button
-          type="button"
-          class="text-zinc-500 hover:text-zinc-100 transition-colors"
-          @click="emit('cancel')"
-        >
-          <X class="h-4 w-4" />
-        </button>
-      </div>
-
-      <!-- server error banner -->
+    <div
+      v-if="isOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style="background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);"
+      @click.self="emit('cancel')"
+    >
       <div
-        v-if="serverError"
-        class="mx-6 mt-4 border border-red-900 bg-red-950/30 px-3 py-2 text-xs text-red-400 font-mono"
+        class="animate-scale-in w-full max-w-2xl border"
+        style="background: var(--bg-surface); border-color: var(--border);"
       >
-        // {{ serverError }}
-      </div>
-
-      <form @submit.prevent="handleSubmit" class="px-6 py-4 space-y-5">
-        <!-- title field -->
-        <div>
-          <div class="flex items-center justify-between pb-1.5">
-            <label for="note-title" class="text-xs font-medium text-zinc-400 tracking-wide">
-              title <span class="text-red-500">*</span>
-            </label>
-            <span
-              class="font-mono text-[10px]"
-              :class="title.length > maxTitleLength ? 'text-red-400' : 'text-zinc-600'"
-            >
-              {{ title.length }}/{{ maxTitleLength }}
-            </span>
+        <!-- header -->
+        <div class="flex items-center justify-between border-b px-6 py-4" style="border-color: var(--border);">
+          <div class="flex items-center gap-2.5">
+            <div
+              class="w-1 h-5"
+              style="background: var(--accent);"
+            ></div>
+            <h3 class="text-sm font-semibold" style="color: var(--text-primary);">
+              {{ noteToEdit ? 'Edit Note' : 'Create Note' }}
+            </h3>
           </div>
-          <input
-            id="note-title"
-            v-model="title"
-            type="text"
-            placeholder="enter note title"
-            class="w-full border bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-700 focus:outline-none transition-colors"
-            :class="titleError ? 'border-red-800 focus:border-red-600' : 'border-zinc-800 focus:border-zinc-600'"
-            @blur="touchedTitle = true"
-          />
-          <p v-if="titleError" class="mt-1 font-mono text-[11px] text-red-400">
-            // {{ titleError }}
-          </p>
-        </div>
-
-        <!-- content field -->
-        <div>
-          <div class="flex items-center justify-between pb-1.5">
-            <label for="note-content" class="text-xs font-medium text-zinc-400 tracking-wide">
-              content <span class="text-red-500">*</span>
-            </label>
-            <span
-              class="font-mono text-[10px]"
-              :class="content.length > maxContentLength ? 'text-red-400' : 'text-zinc-600'"
-            >
-              {{ contentWordCount }} words · {{ content.length }}/{{ maxContentLength }}
-            </span>
-          </div>
-          <textarea
-            id="note-content"
-            v-model="content"
-            rows="9"
-            placeholder="enter note content..."
-            class="w-full resize-y border bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-700 focus:outline-none transition-colors leading-relaxed"
-            :class="contentError ? 'border-red-800 focus:border-red-600' : 'border-zinc-800 focus:border-zinc-600'"
-            @blur="touchedContent = true"
-          ></textarea>
-          <p v-if="contentError" class="mt-1 font-mono text-[11px] text-red-400">
-            // {{ contentError }}
-          </p>
-        </div>
-
-        <!-- form actions -->
-        <div class="flex items-center justify-end gap-3 border-t border-zinc-800 pt-4">
           <button
             type="button"
-            class="border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-colors disabled:opacity-40"
-            :disabled="isSubmitting"
+            class="transition-colors"
+            style="color: var(--text-muted);"
             @click="emit('cancel')"
           >
-            cancel
-          </button>
-          <button
-            type="submit"
-            class="flex items-center gap-2 border border-zinc-100 bg-zinc-100 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            :disabled="!isValid || isSubmitting"
-          >
-            <Check class="h-3.5 w-3.5" />
-            <span v-if="isSubmitting">saving...</span>
-            <span v-else>{{ noteToEdit ? 'update note' : 'create note' }}</span>
+            <X class="h-4 w-4" />
           </button>
         </div>
-      </form>
+
+        <!-- server error -->
+        <div
+          v-if="serverError"
+          class="mx-6 mt-4 px-3 py-2 text-xs font-mono border"
+          style="background: rgba(127,29,29,0.15); border-color: #7f1d1d; color: #fca5a5;"
+        >
+          // {{ serverError }}
+        </div>
+
+        <form @submit.prevent="handleSubmit" class="px-6 py-4 space-y-5">
+          <!-- title field -->
+          <div>
+            <div class="flex items-center justify-between pb-1.5">
+              <label for="note-title" class="text-xs font-medium" style="color: var(--text-secondary);">
+                Title <span style="color: var(--accent);">*</span>
+              </label>
+              <span
+                class="font-mono text-[10px]"
+                :style="title.length > maxTitleLength ? 'color: #f87171;' : 'color: var(--text-muted);'"
+              >
+                {{ title.length }}/{{ maxTitleLength }}
+              </span>
+            </div>
+            <input
+              id="note-title"
+              v-model="title"
+              type="text"
+              placeholder="Enter note title"
+              class="w-full px-3 py-2 text-sm border focus:outline-none transition-colors"
+              :style="`
+                background: var(--bg-raised);
+                color: var(--text-primary);
+                border-color: ${titleError ? '#7f1d1d' : 'var(--border)'};
+              `"
+              @focus="($el as HTMLInputElement).style.borderColor = titleError ? '#7f1d1d' : 'var(--accent)'"
+              @blur="touchedTitle = true; ($el as HTMLInputElement).style.borderColor = titleError ? '#7f1d1d' : 'var(--border)'"
+            />
+            <p v-if="titleError" class="mt-1 font-mono text-[11px]" style="color: #f87171;">
+              // {{ titleError }}
+            </p>
+          </div>
+
+          <!-- content field -->
+          <div>
+            <div class="flex items-center justify-between pb-1.5">
+              <label for="note-content" class="text-xs font-medium" style="color: var(--text-secondary);">
+                Content <span style="color: var(--accent);">*</span>
+              </label>
+              <span
+                class="font-mono text-[10px]"
+                :style="content.length > maxContentLength ? 'color: #f87171;' : 'color: var(--text-muted);'"
+              >
+                {{ contentWordCount }} words · {{ content.length }}/{{ maxContentLength }}
+              </span>
+            </div>
+            <textarea
+              id="note-content"
+              v-model="content"
+              rows="9"
+              placeholder="Enter note content..."
+              class="w-full resize-y px-3 py-2 text-sm border focus:outline-none transition-colors leading-relaxed"
+              :style="`
+                background: var(--bg-raised);
+                color: var(--text-primary);
+                border-color: ${contentError ? '#7f1d1d' : 'var(--border)'};
+              `"
+              @focus="($el as HTMLTextAreaElement).style.borderColor = contentError ? '#7f1d1d' : 'var(--accent)'"
+              @blur="touchedContent = true; ($el as HTMLTextAreaElement).style.borderColor = contentError ? '#7f1d1d' : 'var(--border)'"
+            ></textarea>
+            <p v-if="contentError" class="mt-1 font-mono text-[11px]" style="color: #f87171;">
+              // {{ contentError }}
+            </p>
+          </div>
+
+          <!-- actions -->
+          <div
+            class="flex items-center justify-end gap-3 border-t pt-4"
+            style="border-color: var(--border);"
+          >
+            <button
+              type="button"
+              class="px-4 py-2 text-xs font-medium border transition-colors disabled:opacity-40"
+              style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary);"
+              :disabled="isSubmitting"
+              @click="emit('cancel')"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="flex items-center gap-2 px-4 py-2 text-xs font-semibold border transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+              style="background: var(--accent); border-color: var(--accent); color: #fff;"
+              :disabled="!isValid || isSubmitting"
+            >
+              <Check class="h-3.5 w-3.5" />
+              <span v-if="isSubmitting">Saving...</span>
+              <span v-else>{{ noteToEdit ? 'Update Note' : 'Create Note' }}</span>
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
-  </div>
+  </Transition>
 </template>

@@ -20,8 +20,7 @@ const isExpanded = ref(false);
 // format timestamp
 function formatDate(isoString: string): string {
   try {
-    const date = new Date(isoString);
-    return date.toLocaleDateString('en-US', {
+    return new Date(isoString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -35,37 +34,46 @@ function formatDate(isoString: string): string {
 </script>
 
 <template>
-  <!-- list mode layout -->
+  <!-- list row -->
   <div
     v-if="viewMode === 'list'"
-    class="group flex items-center justify-between gap-4 border border-zinc-800 bg-zinc-900/60 px-5 py-3.5 hover:border-zinc-700 hover:bg-zinc-900 transition-colors"
+    class="group flex items-center justify-between gap-4 px-5 py-3.5 border transition-all duration-200 cursor-default"
+    style="background: var(--bg-surface); border-color: var(--border);"
+    @mouseover="($el as HTMLElement).style.borderColor = 'var(--accent)'"
+    @mouseleave="($el as HTMLElement).style.borderColor = 'var(--border)'"
   >
     <div class="flex items-center gap-4 min-w-0 flex-1">
-      <h4 class="text-sm font-medium text-zinc-100 truncate group-hover:text-white transition-colors">
+      <h4 class="text-sm font-medium truncate" style="color: var(--text-primary);">
         {{ note.title }}
       </h4>
-      <p class="hidden sm:block text-xs text-zinc-500 truncate flex-1">
+      <p class="hidden sm:block text-xs truncate flex-1" style="color: var(--text-muted);">
         {{ note.content }}
       </p>
     </div>
 
     <div class="flex items-center gap-4 shrink-0">
-      <span class="hidden md:block font-mono text-[11px] text-zinc-600">
+      <span class="hidden md:block font-mono text-[11px]" style="color: var(--text-muted);">
         {{ formatDate(note.updated_at) }}
       </span>
-      <div class="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+      <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         <button
           type="button"
-          class="p-1.5 text-zinc-400 hover:text-zinc-100 transition-colors"
-          title="edit note"
+          class="p-1.5 transition-colors"
+          style="color: var(--text-muted);"
+          title="Edit Note"
+          @mouseover="($el as HTMLElement).style.color = 'var(--accent)'"
+          @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
           @click="emit('edit', note)"
         >
           <Edit2 class="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
-          class="p-1.5 text-zinc-400 hover:text-red-400 transition-colors"
-          title="delete note"
+          class="p-1.5 transition-colors"
+          style="color: var(--text-muted);"
+          title="Delete Note"
+          @mouseover="($el as HTMLElement).style.color = '#f87171'"
+          @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
           @click="emit('delete', note)"
         >
           <Trash2 class="h-3.5 w-3.5" />
@@ -74,30 +82,42 @@ function formatDate(isoString: string): string {
     </div>
   </div>
 
-  <!-- grid mode layout (default) -->
+  <!-- grid card -->
   <div
     v-else
-    class="group flex flex-col justify-between border border-zinc-800 bg-zinc-900/60 p-5 hover:border-zinc-700 hover:bg-zinc-900 transition-colors"
+    class="group flex flex-col justify-between border transition-all duration-200 p-5 cursor-default"
+    style="background: var(--bg-surface); border-color: var(--border);"
+    @mouseover="($el as HTMLElement).style.borderColor = 'var(--accent)'"
+    @mouseleave="($el as HTMLElement).style.borderColor = 'var(--border)'"
   >
+    <!-- card header -->
     <div>
-      <!-- card header -->
-      <div class="flex items-start justify-between gap-3 pb-3 border-b border-zinc-800/60">
-        <h4 class="text-sm font-semibold text-zinc-100 line-clamp-1 group-hover:text-white transition-colors">
+      <div
+        class="flex items-start justify-between gap-3 pb-3 border-b"
+        style="border-color: var(--border-subtle);"
+      >
+        <h4 class="text-sm font-semibold line-clamp-1 transition-colors" style="color: var(--text-primary);">
           {{ note.title }}
         </h4>
-        <div class="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity shrink-0">
+        <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
           <button
             type="button"
-            class="p-1 text-zinc-400 hover:text-zinc-100 transition-colors"
-            title="edit note"
+            class="p-1 transition-colors"
+            style="color: var(--text-muted);"
+            title="Edit Note"
+            @mouseover="($el as HTMLElement).style.color = 'var(--accent)'"
+            @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
             @click="emit('edit', note)"
           >
             <Edit2 class="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
-            class="p-1 text-zinc-400 hover:text-red-400 transition-colors"
-            title="delete note"
+            class="p-1 transition-colors"
+            style="color: var(--text-muted);"
+            title="Delete Note"
+            @mouseover="($el as HTMLElement).style.color = '#f87171'"
+            @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
             @click="emit('delete', note)"
           >
             <Trash2 class="h-3.5 w-3.5" />
@@ -105,16 +125,17 @@ function formatDate(isoString: string): string {
         </div>
       </div>
 
-      <!-- content snippet -->
-      <div class="pt-3 text-xs text-zinc-400 whitespace-pre-wrap leading-relaxed">
+      <!-- content -->
+      <div class="pt-3 text-xs leading-relaxed whitespace-pre-wrap" style="color: var(--text-secondary);">
         <p :class="{ 'line-clamp-4': !isExpanded }">{{ note.content }}</p>
         <button
           v-if="note.content.length > 180"
           type="button"
-          class="mt-2 flex items-center gap-1 font-mono text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
+          class="mt-2 flex items-center gap-1 font-mono text-[11px] transition-colors"
+          style="color: var(--text-muted);"
           @click="isExpanded = !isExpanded"
         >
-          <span>{{ isExpanded ? 'collapse' : 'expand' }}</span>
+          <span>{{ isExpanded ? 'Collapse' : 'Expand' }}</span>
           <ChevronUp v-if="isExpanded" class="h-3 w-3" />
           <ChevronDown v-else class="h-3 w-3" />
         </button>
@@ -122,9 +143,14 @@ function formatDate(isoString: string): string {
     </div>
 
     <!-- card footer -->
-    <div class="mt-4 flex items-center gap-1.5 pt-3 border-t border-zinc-800/60">
-      <Clock class="h-3 w-3 text-zinc-700" />
-      <span class="font-mono text-[11px] text-zinc-600">{{ formatDate(note.updated_at) }}</span>
+    <div
+      class="mt-4 flex items-center gap-1.5 pt-3 border-t"
+      style="border-color: var(--border-subtle);"
+    >
+      <Clock class="h-3 w-3" style="color: var(--text-muted);" />
+      <span class="font-mono text-[11px]" style="color: var(--text-muted);">
+        {{ formatDate(note.updated_at) }}
+      </span>
     </div>
   </div>
 </template>
