@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import { X, Check } from '@lucide/vue';
 import type { Note, CreateNoteDto } from '../types/note';
+import PushButton from './PushButton.vue';
 
 // component props
 const props = defineProps<{
@@ -195,7 +196,7 @@ function handleSubmit() {
 
           <!-- actions -->
           <div
-            class="flex items-center justify-end gap-3 border-t pt-4"
+            class="flex items-center justify-end gap-4 border-t pt-4"
             style="border-color: var(--border);"
           >
             <button
@@ -207,16 +208,15 @@ function handleSubmit() {
             >
               Cancel
             </button>
-            <button
+            <PushButton
               type="submit"
-              class="flex items-center gap-2 px-4 py-2 text-xs font-semibold border transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-              style="background: var(--accent); border-color: var(--accent); color: #fff;"
+              variant="primary"
               :disabled="!isValid || isSubmitting"
             >
               <Check class="h-3.5 w-3.5" />
               <span v-if="isSubmitting">Saving...</span>
               <span v-else>{{ noteToEdit ? 'Update Note' : 'Create Note' }}</span>
-            </button>
+            </PushButton>
           </div>
         </form>
       </div>

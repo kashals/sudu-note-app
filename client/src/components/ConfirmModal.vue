@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { AlertTriangle, X } from '@lucide/vue';
+import PushButton from './PushButton.vue';
 
 // component props
 defineProps<{
@@ -71,16 +72,14 @@ const emit = defineEmits<{
           >
             Cancel
           </button>
-          <button
-            type="button"
-            class="px-4 py-2 text-xs font-medium border transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-            style="background: rgba(127,29,29,0.2); border-color: #7f1d1d; color: #fca5a5;"
+          <PushButton
+            variant="danger"
             :disabled="isProcessing"
             @click="emit('confirm')"
           >
             <span v-if="isProcessing" class="font-mono">Processing...</span>
             <span v-else>{{ confirmLabel || 'Delete' }}</span>
-          </button>
+          </PushButton>
         </div>
       </div>
     </div>

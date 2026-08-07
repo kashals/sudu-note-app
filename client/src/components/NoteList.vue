@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { Search, Grid, List, FileText, Plus, RefreshCw } from '@lucide/vue';
 import type { Note } from '../types/note';
 import NoteCard from './NoteCard.vue';
+import PushButton from './PushButton.vue';
 
 // component props
 const props = defineProps<{
@@ -137,15 +138,10 @@ function staggerClass(index: number): string {
         </div>
 
         <!-- new note -->
-        <button
-          type="button"
-          class="flex items-center gap-2 px-4 py-2 text-xs font-semibold border transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-          style="background: var(--accent); border-color: var(--accent); color: #fff;"
-          @click="emit('create')"
-        >
+        <PushButton variant="primary" @click="emit('create')">
           <Plus class="h-3.5 w-3.5" />
-          <span>New Note</span>
-        </button>
+          New Note
+        </PushButton>
       </div>
     </div>
 
@@ -182,15 +178,12 @@ function staggerClass(index: number): string {
       <p class="font-mono text-xs mt-1" style="color: var(--text-muted); opacity: 0.6;">
         Create your first note to get started
       </p>
-      <button
-        type="button"
-        class="mt-5 flex items-center gap-2 px-4 py-2 text-xs font-semibold border transition-all duration-200 hover:scale-[1.02]"
-        style="background: var(--accent); border-color: var(--accent); color: #fff;"
-        @click="emit('create')"
-      >
-        <Plus class="h-3.5 w-3.5" />
-        Create Note
-      </button>
+      <div class="mt-5">
+        <PushButton variant="primary" @click="emit('create')">
+          <Plus class="h-3.5 w-3.5" />
+          Create Note
+        </PushButton>
+      </div>
     </div>
 
     <!-- empty state — no search results -->
