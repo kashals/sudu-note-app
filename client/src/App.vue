@@ -77,6 +77,7 @@ const {
 // ─── locked note & move state ───────────────────────────────────
 const isMovePinModalOpen = ref(false);
 const movePinTargetFolder = ref<Folder | null>(null);
+const moveVerifiedFolderIds = ref<Set<string>>(new Set());
 const pendingMovePayload = ref<{ noteIdOrJson: string; targetFolderId: string | null } | null>(null);
 const unlockedNoteIds = ref<Set<string>>(new Set());
 const isNoteLockPinModalOpen = ref(false);
@@ -722,7 +723,7 @@ async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | nul
   });
 
   const lockedSourceFolder = folders.value.find(f =>
-    sourceFolderIds.has(f.id) && f.is_locked && !unlockedFolderIds.value.has(f.id)
+    sourceFolderIds.has(f.id) && f.is_locked && !moveVerifiedFolderIds.value.has(f.id)
   );
 
   if (lockedSourceFolder) {
@@ -735,7 +736,7 @@ async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | nul
   // Check if notes are being moved INTO a locked target folder
   if (targetFolderId) {
     const targetFolder = folders.value.find(f => f.id === targetFolderId);
-    if (targetFolder && targetFolder.is_locked && !unlockedFolderIds.value.has(targetFolder.id)) {
+    if (targetFolder && targetFolder.is_locked && !moveVerifiedFolderIds.value.has(targetFolder.id)) {
       movePinTargetFolder.value = targetFolder;
       pendingMovePayload.value = { noteIdOrJson, targetFolderId };
       isMovePinModalOpen.value = true;
@@ -743,6 +744,7 @@ async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | nul
     }
   }
 
+  moveVerifiedFolderIds.value = new Set();
   await executeMoveNote(noteIdOrJson, targetFolderId);
 }
 
@@ -751,7 +753,7 @@ async function handleVerifyMovePin(pin: string) {
   const verifiedFolder = movePinTargetFolder.value;
   const ok = await verifyPin(verifiedFolder.id, pin);
   if (ok) {
-    unlockedFolderIds.value = new Set([...unlockedFolderIds.value, verifiedFolder.id]);
+    moveVerifiedFolderIds.value = new Set([...moveVerifiedFolderIds.value, verifiedFolder.id]);
     isMovePinModalOpen.value = false;
     const payload = pendingMovePayload.value;
     movePinTargetFolder.value = null;
