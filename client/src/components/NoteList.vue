@@ -92,6 +92,11 @@ const filteredNotes = computed(() => {
   return filteredByFilters.value.filter(n => n.folder_id === props.activeFolderId);
 });
 
+// Unique layout key to cleanly transition workspace when switching folders, archive mode, or filters
+const workspaceKey = computed(() =>
+  `${viewMode.value}_${showArchived.value ? 'archive' : 'active'}_${props.activeFolderId ?? 'uncategorized'}_${searchQuery.value}_${selectedCategoryFilter.value ?? ''}_${selectedTagFilter.value ?? ''}`
+);
+
 function handleOutsideClick(e: MouseEvent) {
   const target = e.target as HTMLElement;
   if (!target.closest('.filter-dropdown-container')) {
@@ -613,7 +618,7 @@ function staggerClass(index: number): string {
 
         <Transition name="fade-layout" mode="out-in">
           <TransitionGroup
-            :key="viewMode + '_' + (showArchived ? 'archive' : 'active') + '_' + (activeFolderId ?? 'all')"
+            :key="workspaceKey"
             tag="div"
             :class="viewMode === 'grid' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-2'"
             name="note-card-stack"
@@ -654,7 +659,7 @@ function staggerClass(index: number): string {
 
         <Transition name="fade-layout" mode="out-in">
           <TransitionGroup
-            :key="viewMode + '_' + (showArchived ? 'archive' : 'active') + '_' + (activeFolderId ?? 'all')"
+            :key="workspaceKey"
             tag="div"
             :class="viewMode === 'grid' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-2'"
             name="note-card-stack"
