@@ -1,153 +1,134 @@
-# SUDU Simple File Management System 📂
+# SUDU Simple File Management System
 
-Full Stack Note Management Application built for the **SUDU.AI Intern Full-Stack Web Developer Pre-Task**.
+Full Stack Note Management Application built for the SUDU.AI Intern Full-Stack Web Developer Pre-Task.
 
-Developer: **Aakash Pai**  
-Tech Stack: **Vue 3 + TypeScript + Node.js/Express + SQLite + Tailwind CSS + Docker**
+Developer: Aakash Pai
+Tech Stack: Vue 3, TypeScript, Node.js, Express, SQLite, Tailwind CSS, Docker
 
----
+## System Architecture
 
-## 🌟 Overview & Architecture
+The application is structured into two main workspaces:
 
-This application is a production-grade full-stack file/note management system demonstrating rock-solid CRUD functionality, input validation, security hygiene, and a minimalist engineering user interface.
+- Frontend (`/client`): Vue 3 Composition API with TypeScript, Vite, Tailwind CSS, and Lucide icons. Implements state persistence, optimistic UI updates, folder workspace isolation, search/filtering, and responsive grid/list layouts.
+- Backend (`/server`): Node.js and Express API written in TypeScript. Interacts with an SQLite database via parameterized queries to prevent SQL injection vulnerabilities.
+- Security Hygiene: HTTP security headers via Helmet, explicit CORS configuration, double-layered validation (Zod on backend, reactive schema validation on frontend), and action-isolated PIN/security question verification.
 
-### Key Highlights
+## Project Structure
 
-- **Frontend (`/client`)**: Vue 3 (Composition API) with TypeScript, Vite, Tailwind CSS v4, and `@lucide/vue` icons. Features responsive grid/list layouts, search filtering, character counters, real-time validation, and deletion confirmation dialogs.
-- **Backend (`/server`)**: Node.js & Express API written in TypeScript. Uses SQLite with parameterized SQL queries to prevent SQL injection vulnerabilities.
-- **Security Hygiene**: HTTP security headers via `helmet`, explicit `cors` configuration, double-layered validation (Zod on backend, reactive rules on frontend), non-leaking centralized error boundaries, and environment-based configuration.
-- **DevOps**: Complete Docker orchestration via `docker-compose.yml` with persistent volume storage for SQLite database.
-
----
-
-## 🛠️ Project Structure
-
-```
+```text
 .
 ├── client/                     # Vue 3 + TypeScript Frontend
 │   ├── src/
 │   │   ├── components/         # NoteList.vue, NoteForm.vue, NoteCard.vue, ConfirmModal.vue
-│   │   ├── services/           # api.ts (Axios instance & error handling)
-│   │   ├── types/              # note.ts (TypeScript interfaces)
-│   │   ├── App.vue             # Root layout & state management
-│   │   ├── main.ts
-│   │   └── style.css           # Tailwind CSS & dark theme tokens
-│   ├── .env.example
+│   │   ├── composables/        # useFolderState.ts, useNoteFilter.ts, useAutoSave.ts
+│   │   ├── services/           # api.ts (Axios client)
+│   │   ├── types/              # note.ts, folder.ts
+│   │   ├── App.vue             # Root layout and state management
+│   │   └── main.ts
 │   ├── Dockerfile
 │   └── package.json
 ├── server/                     # Node.js + Express + SQLite Backend
 │   ├── src/
-│   │   ├── db.ts               # Parameterized SQLite connection & schema initialization
-│   │   ├── server.ts           # Express server, security middleware & CRUD API endpoints
-│   │   └── types.ts            # Request & response interfaces
-│   ├── .env.example
+│   │   ├── db.ts               # Parameterized SQLite connection and schema migrations
+│   │   ├── server.ts           # Express REST API routes and security middleware
+│   │   └── types.ts            # TypeScript interfaces
 │   ├── Dockerfile
 │   └── package.json
 ├── docker-compose.yml          # Container orchestration
-└── README.md                   # Setup guide & AI process log
+└── README.md
 ```
 
----
-
-## ⚡ Quick Start & Running Locally
+## Setup and Running Locally
 
 ### Prerequisites
 
 - Node.js (v18 or higher)
 - npm (v9 or higher)
 
-### 1. Backend Setup (`server`)
+### 1. Backend Setup (`/server`)
 
 ```bash
 cd server
-npm install --legacy-peer-deps
-cp .env.example .env
+npm install
 npm run dev
 ```
 
-The backend server will run at `http://localhost:5000`.
+The backend API server will start on `http://localhost:5000`.
 
-### 2. Frontend Setup (`client`)
+### 2. Frontend Setup (`/client`)
 
-Open a separate terminal:
+Open a separate terminal window:
 
 ```bash
 cd client
-npm install --legacy-peer-deps
-cp .env.example .env
+npm install
 npm run dev
 ```
 
-The frontend application will run at `http://localhost:5173`.
+The frontend application will start on `http://localhost:5173`.
 
----
+### 3. Running via Docker
 
-## 🐳 Running with Docker (Bonus)
-
-You can launch both the frontend and backend using Docker Compose:
+To run both services using Docker Compose:
 
 ```bash
 docker-compose up --build
 ```
 
-- **Frontend UI**: `http://localhost`
-- **Backend REST API**: `http://localhost:5000/api`
+- Frontend: `http://localhost`
+- Backend API: `http://localhost:5000/api`
 
----
+## REST API Documentation
 
-## 📡 REST API Documentation
+### Notes Endpoints
 
-| Method   | Endpoint          | Description                                    | Payload / Query                     |
-| :------- | :---------------- | :--------------------------------------------- | :---------------------------------- |
-| `GET`    | `/api/health`     | Health check endpoint                          | N/A                                 |
-| `GET`    | `/api/notes`      | Fetch all notes (sorted by `updated_at DESC`)  | N/A                                 |
-| `GET`    | `/api/notes/:id`  | Fetch single note by ID                        | N/A                                 |
-| `POST`   | `/api/notes`      | Create a new note                              | `{ "title": "...", "content": "..." }` |
-| `PUT`    | `/api/notes/:id`  | Update an existing note                        | `{ "title": "...", "content": "..." }` |
-| `DELETE` | `/api/notes/:id`  | Delete a note with confirmation                | N/A                                 |
+| Method | Endpoint | Description | Payload / Parameters |
+| :--- | :--- | :--- | :--- |
+| GET | `/api/notes` | Fetch all notes sorted by update date | None |
+| GET | `/api/notes/:id` | Fetch single note by ID | None |
+| POST | `/api/notes` | Create a new note | `{ title, content, category, is_pinned, is_archived, tags, folder_id }` |
+| PUT | `/api/notes/:id` | Update existing note | `{ title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash }` |
+| DELETE | `/api/notes/:id` | Delete note permanently | None |
 
----
+### Folders & Security Endpoints
 
-## 🤖 Development Process & AI Log
+| Method | Endpoint | Description | Payload / Parameters |
+| :--- | :--- | :--- | :--- |
+| GET | `/api/folders` | Fetch all folders with note counts | None |
+| POST | `/api/folders` | Create a new folder | `{ name, color }` |
+| PUT | `/api/folders/:id` | Update folder properties or lock | `{ name, color, is_locked, pin }` |
+| DELETE | `/api/folders/:id` | Delete folder and unassign notes | None |
+| POST | `/api/folders/:id/verify-pin` | Verify folder PIN | `{ pin }` |
+| POST | `/api/folders/:id/reset-pin` | Reset folder lock via security answer | `{ answer }` |
+| GET | `/api/settings/security-question` | Check if security question is set | None |
+| POST | `/api/settings/security-question` | Save security question and answer | `{ question, answer }` |
 
-In accordance with pre-task guidelines, below are 3 concrete examples of how AI assistance was leveraged, verified, and refined during development:
+## AI Development Process Log
 
-### Example 1: Frontend Note Layout Component
-- **Prompt Given**:  
-  *"Generate a Vue 3 TypeScript component using Tailwind CSS to display note cards in a responsive grid layout with edit/delete buttons."*
-- **AI Output**:  
-  The AI produced a standard card layout with rounded borders, soft drop shadows, colorful gradient headers, and inline state toggles.
-- **Modification & Verification**:  
-  Stripped out all rounded floating shadows and colorful gradients to match our sleek, anti-vibecode technical design (Linear/Vercel slate monochrome styling). Replaced generic button text with accessible Lucide icons (`Edit2`, `Trash2`), added a `line-clamp-4` expand/collapse toggle for long notes, and bound typed Vue emits (`@edit`, `@delete`).
-- **Reasoning**:  
-  CRUD usability and crisp readability take absolute priority over generic AI aesthetics. High-contrast border definitions provide a much cleaner engineering finish.
+In accordance with submission requirements, below are 3 concrete examples of how AI assistance was integrated, evaluated, and modified during development:
 
-### Example 2: Backend Parameterized SQLite Schema & Connection
-- **Prompt Given**:  
-  *"Provide a Node.js Express TypeScript database connection script using sqlite3 that initializes a notes table."*
-- **AI Output**:  
-  Suggested using string concatenation inside `.exec()` queries (`"CREATE TABLE " + tableName`) and basic unparameterized queries.
-- **Modification & Verification**:  
-  Replaced raw string building with `sqlite` promise-based wrapper methods and enforced strict parameterized SQL statements (`db.all('SELECT ... WHERE id = ?', [id])`, `db.run('INSERT INTO notes ... VALUES (?, ?, ?, ?, ?)', [...])`). Added automatic `PRAGMA foreign_keys = ON;` initialization.
-- **Reasoning**:  
-  Production-grade security hygiene requires zero SQL injection surface area. Parameterized queries protect data integrity regardless of input strings.
+### 1. Component Architecture and State Management
+- Prompt: "Generate a Vue 3 component layout for note cards and folder lists with drag and drop support."
+- AI Output: Generated monolithic components with inline state mutators and unstructured event listeners.
+- Refactoring and Verification: Extracted state logic into composables (`useFolderState`, `useNoteFilter`). Replaced inline drag events with typed emit interfaces and handled event payload normalization in `App.vue` to prevent parameter mismatch bugs during folder moves.
+- Reasoning: Decoupling state logic from UI templates makes code maintainable and prevents silent state desynchronization between components.
 
-### Example 3: Express Error Boundary & Centralized Validation
-- **Prompt Given**:  
-  *"Write an Express error handler middleware that catches database errors and sends details back to client."*
-- **AI Output**:  
-  Returned a generic catch-all handler `res.status(500).json({ error: err.message, stack: err.stack })`.
-- **Modification & Verification**:  
-  Refactored the global error middleware to log internal stack traces privately on the server stdout while returning a generic, safe payload `{ error: 'internal server error' }` to clients. Added explicit Zod validation schemas for incoming `POST`/`PUT` requests.
-- **Reasoning**:  
-  Leaking raw database or stack trace errors to the client creates security vulnerabilities. Centralized Zod validation ensures invalid/blank notes are caught with actionable 400 Bad Request responses before touching SQLite.
+### 2. SQLite Schema and Security Verification
+- Prompt: "Write an Express route to insert notes into SQLite database using TypeScript."
+- AI Output: Proposed unparameterized string formatting inside query strings.
+- Refactoring and Verification: Implemented promise-based `sqlite` wrappers with parameterized query bindings across all endpoints (`db.all('SELECT ... WHERE id = ?', [id])`). Enforced foreign key constraints (`PRAGMA foreign_keys = ON;`) during initial schema initialization.
+- Reasoning: Strict parameterization prevents SQL injection attacks and handles special character sanitization automatically.
 
----
+### 3. Transition Keying and DOM Reconciliation
+- Prompt: "Fix Vue TransitionGroup lingering element issue when filtering arrays."
+- AI Output: Suggested adding arbitrary `setTimeout` delays in component lifecycle hooks.
+- Refactoring and Verification: Rejected arbitrary timers. Defined a reactive computed property (`workspaceKey`) in `NoteList.vue` that combines `viewMode`, `showArchived`, `props.activeFolderId`, and active filter states, binding it directly to `:key` on `<TransitionGroup>`.
+- Reasoning: Binding complete layout context to transition keys allows Vue to perform deterministic Virtual DOM diffing with clean out-in element transitions, preventing ghost element flashes without artificial delays.
 
-## ✉️ Submission Protocol
+## Submission Details
 
-- **Email Subject**: `Full Stack Pre-Task: Aakash Pai`
-- **To**: `hr@sudu.ai`
-- **CC**: `donghao.lee@aserious.co`
-- **Repository Link**: [GitHub Repository URL]
-- **Live Server URL**: [Deployment Live URL]
+- Email Subject: Full Stack Pre-Task: Aakash Pai
+- Sent To: hr@sudu.ai
+- CC: donghao.lee@aserious.co
+- GitHub Repository: https://github.com/kashals/sudu-note-app
+- Live Deployment: https://sudu-note-app-client.onrender.com (Frontend) / https://sudu-note-app.onrender.com (Backend)
