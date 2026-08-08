@@ -113,7 +113,7 @@ function agentIdle(delay = 1400) {
 // ─── keyboard shortcuts ───────────────────────────────────────
 function handleGlobalKeydown(e: KeyboardEvent) {
   const isInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA';
-  
+
   // Toggle help modal when pressing '?'
   if (e.key === '?' && !isInput) {
     e.preventDefault();
@@ -712,7 +712,7 @@ async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | nul
 
   // optimistic update
   notes.value = notes.value.map(n => targetsToMove.includes(n.id) ? { ...n, folder_id: targetFolderId } : n);
-  
+
   // update sidebar count refs
   Object.entries(oldFolderCounts).forEach(([prevId, count]) => {
     if (prevId !== 'none') {
@@ -820,7 +820,7 @@ onUnmounted(() => {
           </div>
           <div>
             <h1 class="text-xs font-bold tracking-widest uppercase" style="color: var(--text-primary);">
-              SuDu Notes
+              SuDuVault
             </h1>
             <p class="font-mono text-[10px] mt-0.5" style="color: var(--text-muted);">
               file management system
