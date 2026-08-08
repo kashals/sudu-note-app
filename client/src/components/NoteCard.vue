@@ -9,9 +9,11 @@ import { formatDate, stripHtml, formatNoteId } from '../utils/formatters';
 const props = defineProps<{
   note: Note;
   viewMode?: 'grid' | 'list';
-  indexNumber?: number;
+  noteNumber?: number;
   isSelectMode?: boolean;
   isSelected?: boolean;
+  selectedNoteIds?: string[];
+  selectedNotes?: Note[];
 }>();
 
 const emit = defineEmits<{
@@ -23,7 +25,7 @@ const emit = defineEmits<{
   (e: 'toggle-select', noteId: string): void;
 }>();
 
-const noteIdFormatted = computed(() => formatNoteId(props.indexNumber !== undefined ? props.indexNumber + 1 : 1));
+const noteIdFormatted = computed(() => formatNoteId(props.noteNumber !== undefined ? props.noteNumber : 1));
 
 const wordCount = computed(() => {
   const t = props.note.content.trim();
@@ -49,6 +51,134 @@ function handleCardClick() {
     emit('edit', props.note);
   }
 }
+
+function createDragImage(count: number, titles: string[]) {
+  // Create off-screen container
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.top = '-1000px';
+  container.style.left = '-1000px';
+  container.style.pointerEvents = 'none';
+  container.style.zIndex = '-100';
+  
+  // Render up to 3 stacked cards
+  const maxCards = Math.min(count, 3);
+  for (let i = 0; i < maxCards; i++) {
+    const card = document.createElement('div');
+    card.style.position = 'absolute';
+    card.style.width = '120px';
+    card.style.height = '80px';
+    card.style.background = 'var(--bg-surface)';
+    card.style.border = '1.5px solid var(--accent)';
+    card.style.borderRadius = '6px';
+    card.style.padding = '8px';
+    card.style.boxShadow = '0 6px 16px rgba(0,0,0,0.3)';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.justifyContent = 'flex-start';
+    card.style.fontFamily = 'monospace';
+    card.style.fontSize = '8px';
+    card.style.color = 'var(--text-primary)';
+    
+    // Stagger layout for jumbled look
+    // 0 -> -6deg, 1 -> 4deg, 2 -> -10deg
+    const rotations = [-6, 6, -10];
+    const rotate = rotations[i % rotations.length] || 0;
+    const tx = i * 6;
+    const ty = i * 5;
+    
+    card.style.transform = `translate(${tx}px, ${ty}px) rotate(${rotate}deg)`;
+    // Lower index elements render on top visually in DOM order, so we reverse z-index
+    card.style.zIndex = String(10 - i);
+    
+    // Title
+    const titleText = document.createElement('div');
+    titleText.textContent = titles[i] || 'Untitled Note';
+    titleText.style.fontWeight = 'bold';
+    titleText.style.whiteSpace = 'nowrap';
+    titleText.style.overflow = 'hidden';
+    titleText.style.textOverflow = 'ellipsis';
+    titleText.style.marginBottom = '4px';
+    card.appendChild(titleText);
+
+    // Decorative dummy lines
+    const line1 = document.createElement('div');
+    line1.style.width = '75%';
+    line1.style.height = '3px';
+    line1.style.background = 'var(--border)';
+    line1.style.borderRadius = '2px';
+    line1.style.marginTop = '3px';
+    card.appendChild(line1);
+
+    const line2 = document.createElement('div');
+    line2.style.width = '50%';
+    line2.style.height = '3px';
+    line2.style.background = 'var(--border)';
+    line2.style.borderRadius = '2px';
+    line2.style.marginTop = '3px';
+    card.appendChild(line2);
+    
+    // If it is the last card in loop (bottom-most in coordinates but top-most visually in z-index)
+    // and total count is greater than 3, add the "+X" badge
+    if (i === 0 && count > 3) {
+      const badge = document.createElement('div');
+      badge.style.position = 'absolute';
+      badge.style.bottom = '-6px';
+      badge.style.right = '-6px';
+      badge.style.background = 'var(--accent)';
+      badge.style.color = 'var(--bg-base)';
+      badge.style.borderRadius = '12px';
+      badge.style.padding = '2px 5px';
+      badge.style.fontWeight = 'bold';
+      badge.style.fontSize = '9px';
+      badge.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+      badge.style.border = '1px solid var(--border)';
+      badge.textContent = `+${count - 3}`;
+      card.appendChild(badge);
+    }
+    
+    container.appendChild(card);
+  }
+  
+  document.body.appendChild(container);
+  
+  // Remove after drag has successfully initialized
+  setTimeout(() => {
+    if (container.parentNode) {
+      document.body.removeChild(container);
+    }
+  }, 100);
+  
+  return container;
+}
+
+function handleDragStart(e: DragEvent) {
+  let count = 1;
+  let titles = [props.note.title];
+
+  if (props.isSelectMode && props.isSelected && props.selectedNoteIds && props.selectedNoteIds.length > 0) {
+    count = props.selectedNoteIds.length;
+    
+    // Map titles from selectedNotes
+    if (props.selectedNotes) {
+      const other = props.selectedNotes
+        .filter(n => n.id !== props.note.id)
+        .map(n => n.title);
+      titles = [props.note.title, ...other];
+    }
+    
+    e.dataTransfer?.setData('text/plain', JSON.stringify(props.selectedNoteIds));
+  } else {
+    e.dataTransfer?.setData('text/plain', props.note.id);
+  }
+  
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    const dragImg = createDragImage(count, titles);
+    // position ghost offset relative to cursor
+    e.dataTransfer.setDragImage(dragImg, 20, 20);
+  }
+}
 </script>
 
 <template>
@@ -56,6 +186,8 @@ function handleCardClick() {
   <div
     v-if="viewMode === 'list'"
     class="group flex items-center justify-between gap-4 px-4 py-3 border transition-all duration-200 cursor-pointer animate-fade-up select-none"
+    draggable="true"
+    @dragstart="handleDragStart"
     :style="{
       background: isSelected ? 'var(--accent-glow)' : 'var(--bg-surface)',
       borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
@@ -199,6 +331,8 @@ function handleCardClick() {
   <div
     v-else
     class="note-card group relative flex flex-col justify-between p-5 border transition-all duration-300 cursor-pointer overflow-hidden animate-scale-in select-none"
+    draggable="true"
+    @dragstart="handleDragStart"
     :style="{
       background: isSelected ? 'var(--accent-glow)' : 'var(--bg-surface)',
       borderColor: isSelected ? 'var(--accent)' : 'var(--border)',

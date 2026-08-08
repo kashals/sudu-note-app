@@ -33,11 +33,25 @@ export async function getDb(): Promise<Database> {
 
 // initialize database schema and run migrations
 async function initSchema(db: Database): Promise<void> {
+  // Notes table
   await db.exec(`
     CREATE TABLE IF NOT EXISTS notes (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  // Folders table
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS folders (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#3b82f6',
+      is_locked INTEGER NOT NULL DEFAULT 0,
+      pin_hash TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -70,4 +84,19 @@ async function initSchema(db: Database): Promise<void> {
   } catch (err) {
     // column already exists
   }
+
+  // Add folder_id column to notes if missing
+  try {
+    await db.exec("ALTER TABLE notes ADD COLUMN folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL;");
+  } catch (err) {
+    // column already exists
+  }
+
+  // System settings table
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
 }

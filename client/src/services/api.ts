@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import type { Note, CreateNoteDto, UpdateNoteDto, ApiError } from '../types/note';
+import type { Folder, CreateFolderDto, UpdateFolderDto } from '../types/folder';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -36,7 +37,8 @@ function formatError(error: unknown): ApiError {
   return { message: 'an unknown error occurred.' };
 }
 
-// fetch all notes
+// ─── notes ───────────────────────────────────────────────────────
+
 export async function getNotes(): Promise<Note[]> {
   try {
     const response = await apiClient.get<Note[]>('/notes');
@@ -46,7 +48,6 @@ export async function getNotes(): Promise<Note[]> {
   }
 }
 
-// fetch note by id
 export async function getNoteById(id: string): Promise<Note> {
   try {
     const response = await apiClient.get<Note>(`/notes/${id}`);
@@ -56,7 +57,6 @@ export async function getNoteById(id: string): Promise<Note> {
   }
 }
 
-// create note
 export async function createNote(dto: CreateNoteDto): Promise<Note> {
   try {
     const response = await apiClient.post<Note>('/notes', dto);
@@ -66,7 +66,6 @@ export async function createNote(dto: CreateNoteDto): Promise<Note> {
   }
 }
 
-// update note
 export async function updateNote(id: string, dto: UpdateNoteDto): Promise<Note> {
   try {
     const response = await apiClient.put<Note>(`/notes/${id}`, dto);
@@ -76,10 +75,83 @@ export async function updateNote(id: string, dto: UpdateNoteDto): Promise<Note> 
   }
 }
 
-// delete note
 export async function deleteNote(id: string): Promise<void> {
   try {
     await apiClient.delete(`/notes/${id}`);
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
+// ─── folders ─────────────────────────────────────────────────────
+
+export async function getFolders(): Promise<Folder[]> {
+  try {
+    const response = await apiClient.get<Folder[]>('/folders');
+    return response.data;
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
+export async function createFolder(dto: CreateFolderDto): Promise<Folder> {
+  try {
+    const response = await apiClient.post<Folder>('/folders', dto);
+    return response.data;
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
+export async function updateFolder(id: string, dto: UpdateFolderDto): Promise<Folder> {
+  try {
+    const response = await apiClient.put<Folder>(`/folders/${id}`, dto);
+    return response.data;
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
+export async function deleteFolder(id: string): Promise<void> {
+  try {
+    await apiClient.delete(`/folders/${id}`);
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
+export async function verifyFolderPin(id: string, pin: string): Promise<boolean> {
+  try {
+    const response = await apiClient.post<{ success: boolean }>(`/folders/${id}/verify-pin`, { pin });
+    return response.data.success;
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
+// ─── security question settings ───────────────────────────────────
+
+export async function getSecurityQuestion(): Promise<{ configured: boolean; question?: string }> {
+  try {
+    const response = await apiClient.get<{ configured: boolean; question?: string }>('/settings/security-question');
+    return response.data;
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
+export async function setSecurityQuestion(question: string, answer: string): Promise<void> {
+  try {
+    await apiClient.post('/settings/security-question', { question, answer });
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
+export async function resetFolderPin(id: string, answer: string): Promise<boolean> {
+  try {
+    const response = await apiClient.post<{ success: boolean }>((`/folders/${id}/reset-pin`), { answer });
+    return response.data.success;
   } catch (error) {
     throw formatError(error);
   }

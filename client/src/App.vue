@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { FileText, AlertCircle, CheckCircle2, ShieldCheck, X, Sun, Moon, Keyboard } from '@lucide/vue';
+import { FileText, AlertCircle, CheckCircle2, X, Sun, Moon, Keyboard, Loader2, Check, RefreshCw } from '@lucide/vue';
 import type { Note, CreateNoteDto } from './types/note';
 import { getNotes, createNote, updateNote, deleteNote } from './services/api';
 import NoteList from './components/NoteList.vue';
 import NoteForm from './components/NoteForm.vue';
 import ConfirmModal from './components/ConfirmModal.vue';
+import FolderSidebar from './components/sidebar/FolderSidebar.vue';
 import { useToast } from './composables/useToast';
 import { useTheme } from './composables/useTheme';
+import { useFolderState } from './composables/useFolderState';
 
 // ─── note state ──────────────────────────────────────────────
 const notes = ref<Note[]>([]);
@@ -27,13 +29,61 @@ const isArchiveModalOpen = ref(false);
 const noteToArchive = ref<Note | null>(null);
 const isArchiving = ref(false);
 
+// ─── batch operations confirmation state ──────────────────────
+const isBatchDelete = ref(false);
+const isBatchArchive = ref(false);
+const batchNoteIds = ref<string[]>([]);
+
+const deleteModalTitle = computed(() => isBatchDelete.value ? 'Delete Multiple Notes Forever' : 'Delete Note Forever');
+const deleteModalMessage = computed(() => {
+  if (isBatchDelete.value) {
+    return `Are you sure you want to delete these ${batchNoteIds.value.length} notes permanently? This action is permanent and cannot be undone.`;
+  }
+  return `Permanently delete '${noteToDelete.value?.title || 'Untitled Note'}'? This action is permanent and cannot be undone.`;
+});
+
+const archiveModalTitle = computed(() => isBatchArchive.value ? 'Move Multiple Notes to Archive' : 'Move to Archive');
+const archiveModalMessage = computed(() => {
+  if (isBatchArchive.value) {
+    return `Are you sure you want to archive these ${batchNoteIds.value.length} notes? You can restore them later from the Archive view.`;
+  }
+  return `Are you sure you want to archive '${noteToArchive.value?.title || 'Untitled Note'}'? You can view, restore, or delete it forever from the Archive view.`;
+});
+
 // ─── feedback & theme composables ────────────────────────────
 const connectionError = ref<string | null>(null);
 const formError = ref<string | null>(null);
 const { toastMessage, toastType, showToast, dismissToast } = useToast();
 const { isDark, toggleTheme, initTheme } = useTheme();
 
-// ─── agent state ──────────────────────────────────────────────
+// ─── folder state ─────────────────────────────────────────────
+const {
+  activeFolderId,
+  activeFolder,
+  loadFolders,
+  updateFolderNoteCount
+} = useFolderState();
+
+// ─── refresh state ────────────────────────────────────────────
+const refreshState = ref<'idle' | 'loading' | 'success'>('idle');
+let refreshSuccessTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function handleRefresh() {
+  if (refreshState.value === 'loading') return;
+  refreshState.value = 'loading';
+  if (refreshSuccessTimer) clearTimeout(refreshSuccessTimer);
+  try {
+    await fetchNotes();
+    refreshState.value = 'success';
+    refreshSuccessTimer = setTimeout(() => {
+      refreshState.value = 'idle';
+    }, 2000);
+  } catch {
+    refreshState.value = 'idle';
+  }
+}
+
+// ─── agent state ──────────────────────────────────────────
 const agentStatus = ref<'idle' | 'syncing'>('idle');
 const isShortcutsOpen = ref(false);
 let agentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -224,6 +274,7 @@ async function handleFormSubmit(payload: CreateNoteDto) {
       is_pinned: payload.is_pinned ?? 0,
       is_archived: payload.is_archived ?? 0,
       tags: payload.tags ?? '[]',
+      folder_id: activeFolderId.value,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -232,13 +283,18 @@ async function handleFormSubmit(payload: CreateNoteDto) {
     isFormOpen.value = false;
 
     try {
-      const created = await createNote(payload);
+      const created = await createNote({
+        ...payload,
+        folder_id: activeFolderId.value
+      });
       const i = notes.value.findIndex((n) => n.id === tempId);
       if (i !== -1) {
         const updatedNotes = [...notes.value];
         updatedNotes[i] = created;
         notes.value = updatedNotes;
       }
+      // update sidebar count
+      if (activeFolderId.value) updateFolderNoteCount(activeFolderId.value, 1);
       sortNotes();
       showToast('Note created');
       agentIdle();
@@ -351,6 +407,19 @@ function openArchiveModal(note: Note) {
 }
 
 async function handleConfirmArchive() {
+  if (isBatchArchive.value) {
+    isArchiving.value = true;
+    try {
+      await handleBatchArchive(batchNoteIds.value);
+      isArchiveModalOpen.value = false;
+      batchNoteIds.value = [];
+      isBatchArchive.value = false;
+    } finally {
+      isArchiving.value = false;
+    }
+    return;
+  }
+
   if (!noteToArchive.value) return;
   isArchiving.value = true;
   agentSync();
@@ -362,6 +431,7 @@ async function handleConfirmArchive() {
   // optimistic archive
   notes.value = notes.value.map(n => n.id === target.id ? { ...n, is_archived: 1, is_pinned: 0 } : n);
   sortNotes();
+  if (target.folder_id) updateFolderNoteCount(target.folder_id, -1);
   isArchiveModalOpen.value = false;
   noteToArchive.value = null;
 
@@ -374,11 +444,13 @@ async function handleConfirmArchive() {
       is_archived: 1,
       tags: target.tags
     });
+    await loadFolders();
     showToast('Note moved to archive');
     agentIdle();
   } catch (err: any) {
     notes.value = originalNotes;
     sortNotes();
+    await loadFolders();
     showToast('Reverting...', 'error');
     agentIdle(0);
   } finally {
@@ -394,6 +466,7 @@ async function handleRestoreNote(note: Note) {
   // optimistic restore
   notes.value = notes.value.map(n => n.id === note.id ? { ...n, is_archived: 0 } : n);
   sortNotes();
+  if (note.folder_id) updateFolderNoteCount(note.folder_id, 1);
 
   try {
     await updateNote(note.id, {
@@ -404,11 +477,13 @@ async function handleRestoreNote(note: Note) {
       is_archived: 0,
       tags: note.tags
     });
+    await loadFolders();
     showToast('Note restored to workspace');
     agentIdle();
   } catch (err: any) {
     notes.value = originalNotes;
     sortNotes();
+    await loadFolders();
     showToast('Reverting...', 'error');
     agentIdle(0);
   }
@@ -423,6 +498,14 @@ async function handleBatchArchive(noteIds: string[]) {
   notes.value = notes.value.map(n => noteIds.includes(n.id) ? { ...n, is_archived: 1, is_pinned: 0 } : n);
   sortNotes();
 
+  // Optimistic count offset
+  noteIds.forEach(id => {
+    const n = originalNotes.find(item => item.id === id);
+    if (n && n.folder_id && n.is_archived === 0) {
+      updateFolderNoteCount(n.folder_id, -1);
+    }
+  });
+
   try {
     await Promise.all(noteIds.map(id => {
       const target = originalNotes.find(n => n.id === id);
@@ -436,11 +519,13 @@ async function handleBatchArchive(noteIds: string[]) {
         tags: target.tags
       });
     }));
+    await loadFolders();
     showToast(`${noteIds.length} notes moved to archive`);
     agentIdle();
   } catch (err: any) {
     notes.value = originalNotes;
     sortNotes();
+    await loadFolders();
     showToast('Failed to archive notes', 'error');
     agentIdle(0);
   }
@@ -453,6 +538,14 @@ async function handleBatchRestore(noteIds: string[]) {
 
   notes.value = notes.value.map(n => noteIds.includes(n.id) ? { ...n, is_archived: 0 } : n);
   sortNotes();
+
+  // Optimistic count offset
+  noteIds.forEach(id => {
+    const n = originalNotes.find(item => item.id === id);
+    if (n && n.folder_id && n.is_archived === 1) {
+      updateFolderNoteCount(n.folder_id, 1);
+    }
+  });
 
   try {
     await Promise.all(noteIds.map(id => {
@@ -467,11 +560,13 @@ async function handleBatchRestore(noteIds: string[]) {
         tags: target.tags
       });
     }));
+    await loadFolders();
     showToast(`${noteIds.length} notes restored`);
     agentIdle();
   } catch (err: any) {
     notes.value = originalNotes;
     sortNotes();
+    await loadFolders();
     showToast('Failed to restore notes', 'error');
     agentIdle(0);
   }
@@ -485,13 +580,23 @@ async function handleBatchDelete(noteIds: string[]) {
   notes.value = notes.value.filter(n => !noteIds.includes(n.id));
   sortNotes();
 
+  // Optimistic count offset
+  noteIds.forEach(id => {
+    const n = originalNotes.find(item => item.id === id);
+    if (n && n.folder_id && n.is_archived === 0) {
+      updateFolderNoteCount(n.folder_id, -1);
+    }
+  });
+
   try {
     await Promise.all(noteIds.map(id => deleteNote(String(id))));
+    await loadFolders();
     showToast(`${noteIds.length} notes deleted permanently`);
     agentIdle();
   } catch (err: any) {
     notes.value = originalNotes;
     sortNotes();
+    await loadFolders();
     showToast('Failed to delete notes', 'error');
     agentIdle(0);
   }
@@ -504,6 +609,19 @@ function openDeleteModal(note: Note) {
 }
 
 async function handleConfirmDelete() {
+  if (isBatchDelete.value) {
+    isDeleting.value = true;
+    try {
+      await handleBatchDelete(batchNoteIds.value);
+      isDeleteModalOpen.value = false;
+      batchNoteIds.value = [];
+      isBatchDelete.value = false;
+    } finally {
+      isDeleting.value = false;
+    }
+    return;
+  }
+
   if (!noteToDelete.value) return;
   isDeleting.value = true;
   agentSync();
@@ -513,11 +631,15 @@ async function handleConfirmDelete() {
 
   // optimistic remove
   notes.value = notes.value.filter((n) => n.id !== target.id);
+  if (target.folder_id && target.is_archived === 0) {
+    updateFolderNoteCount(target.folder_id, -1);
+  }
   isDeleteModalOpen.value = false;
   noteToDelete.value = null;
 
   try {
     await deleteNote(target.id);
+    await loadFolders();
     showToast('Note deleted permanently');
     agentIdle();
   } catch (err: any) {
@@ -527,6 +649,7 @@ async function handleConfirmDelete() {
       notes.value.splice(targetIndex, 0, target);
       sortNotes();
     }
+    await loadFolders();
     showToast('Reverting...', 'error');
     agentIdle(0);
   } finally {
@@ -534,13 +657,110 @@ async function handleConfirmDelete() {
   }
 }
 
+function triggerBatchDelete(noteIds: string[]) {
+  batchNoteIds.value = noteIds;
+  isBatchDelete.value = true;
+  isDeleteModalOpen.value = true;
+}
+
+function triggerBatchArchive(noteIds: string[]) {
+  batchNoteIds.value = noteIds;
+  isBatchArchive.value = true;
+  isArchiveModalOpen.value = true;
+}
+
 function dismissConnectionError() { connectionError.value = null; }
+
+// ─── move note to folder (drag-drop and batch) ─────────────────────
+async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | null) {
+  let noteIds: string[] = [];
+  try {
+    if (noteIdOrJson.startsWith('[')) {
+      noteIds = JSON.parse(noteIdOrJson);
+    } else {
+      noteIds = [noteIdOrJson];
+    }
+  } catch {
+    noteIds = [noteIdOrJson];
+  }
+
+  if (noteIds.length === 0) return;
+  agentSync();
+
+  const originalNotes = JSON.parse(JSON.stringify(notes.value));
+
+  // Filter notes that are not already in targetFolderId
+  const targetsToMove = noteIds.filter(id => {
+    const note = notes.value.find(n => n.id === id);
+    return note && note.folder_id !== targetFolderId;
+  });
+
+  if (targetsToMove.length === 0) {
+    agentIdle();
+    return;
+  }
+
+  // Count offsets per folder for sidebars
+  const oldFolderCounts: Record<string, number> = {};
+  targetsToMove.forEach(id => {
+    const note = notes.value.find(n => n.id === id);
+    if (note) {
+      const prevId = note.folder_id || 'none';
+      oldFolderCounts[prevId] = (oldFolderCounts[prevId] || 0) + 1;
+    }
+  });
+
+  // optimistic update
+  notes.value = notes.value.map(n => targetsToMove.includes(n.id) ? { ...n, folder_id: targetFolderId } : n);
+  
+  // update sidebar count refs
+  Object.entries(oldFolderCounts).forEach(([prevId, count]) => {
+    if (prevId !== 'none') {
+      updateFolderNoteCount(prevId, -count);
+    }
+  });
+  updateFolderNoteCount(targetFolderId, targetsToMove.length);
+
+  try {
+    await Promise.all(targetsToMove.map(async (id) => {
+      const note = originalNotes.find((n: Note) => n.id === id);
+      if (note) {
+        await updateNote(id, {
+          title: note.title,
+          content: note.content,
+          folder_id: targetFolderId,
+          category: note.category,
+          is_pinned: note.is_pinned,
+          is_archived: note.is_archived,
+          tags: note.tags
+        });
+      }
+    }));
+    showToast(
+      targetsToMove.length === 1
+        ? (targetFolderId ? 'Note moved to folder' : 'Note moved to All Notes')
+        : `${targetsToMove.length} notes moved successfully`
+    );
+    agentIdle();
+  } catch {
+    // revert
+    notes.value = originalNotes;
+    await loadFolders();
+    showToast('Failed to move notes', 'error');
+    agentIdle(0);
+  }
+}
+
+async function handleBatchMoveFolder({ noteIds, folderId }: { noteIds: string[]; folderId: string | null }) {
+  await handleMoveNote(JSON.stringify(noteIds), folderId);
+}
 
 // ─── lifecycle ────────────────────────────────────────────────
 onMounted(() => {
   initTheme();
   document.addEventListener('keydown', handleGlobalKeydown);
   fetchNotes();
+  loadFolders();
 });
 
 onUnmounted(() => {
@@ -549,7 +769,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col font-sans" style="background: var(--bg-base); color: var(--text-primary);">
+  <div class="h-screen flex flex-col font-sans overflow-hidden" style="background: var(--bg-base); color: var(--text-primary);">
 
     <!-- connection error banner -->
     <Transition
@@ -589,7 +809,7 @@ onUnmounted(() => {
         backdropFilter: 'blur(12px)',
       }"
     >
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+      <div class="px-6 h-14 flex items-center justify-between w-full">
         <!-- logo -->
         <div class="flex items-center gap-3">
           <div
@@ -608,32 +828,26 @@ onUnmounted(() => {
           </div>
         </div>
 
-
-
         <!-- right badges -->
         <div class="flex items-center gap-2 font-mono text-[11px]">
-          <!-- record count -->
-          <div
-            class="hidden sm:block px-2.5 py-1.5 border"
-            style="background: var(--bg-raised); border-color: var(--border); color: var(--text-muted);"
+          <!-- refresh workspace -->
+          <button
+            class="p-2 border transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+            :disabled="isLoading"
+            :title="refreshState === 'success' ? 'Up to date' : refreshState === 'loading' ? 'Refreshing...' : 'Refresh workspace'"
+            style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary); width: 34px; height: 34px;"
+            @click="handleRefresh"
           >
-            {{ notes.length }} records
-          </div>
-
-          <!-- sqlite status -->
-          <div
-            class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 border"
-            style="background: var(--bg-raised); border-color: var(--border);"
-          >
-            <ShieldCheck class="h-3 w-3" style="color: var(--accent);" />
-            <span style="color: var(--text-muted);">SQLite</span>
-          </div>
+            <Loader2 v-if="refreshState === 'loading'" class="h-4 w-4 animate-spin text-emerald-400" />
+            <Check v-else-if="refreshState === 'success'" class="h-4 w-4 text-emerald-400" />
+            <RefreshCw v-else class="h-4 w-4" />
+          </button>
 
           <!-- theme toggle -->
           <button
-            class="p-2 border transition-colors"
+            class="p-2 border transition-colors cursor-pointer"
             :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
-            style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary);"
+            style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary); width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;"
             @click="toggleTheme"
           >
             <Sun v-if="isDark" class="h-4 w-4" />
@@ -642,7 +856,7 @@ onUnmounted(() => {
 
           <!-- shortcuts help button -->
           <button
-            class="p-2 border transition-colors flex items-center justify-center font-bold"
+            class="p-2 border transition-colors flex items-center justify-center font-bold cursor-pointer"
             title="Keyboard Shortcuts (?)"
             style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary); width: 34px; height: 34px;"
             @click="isShortcutsOpen = true"
@@ -654,21 +868,31 @@ onUnmounted(() => {
     </header>
 
     <!-- ─── main ─── -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 flex-1 w-full">
-      <NoteList
+    <main class="flex flex-1 w-full overflow-hidden">
+      <!-- Folder sidebar -->
+      <FolderSidebar
         :notes="notes"
-        :is-loading="isLoading"
-        @create="openCreateModal"
-        @edit="openEditModal"
-        @delete="openDeleteModal"
-        @toggle-pin="handleTogglePin"
-        @archive="openArchiveModal"
-        @restore="handleRestoreNote"
-        @refresh="fetchNotes"
-        @batch-archive="handleBatchArchive"
-        @batch-restore="handleBatchRestore"
-        @batch-delete="handleBatchDelete"
+        @move-note="handleMoveNote"
       />
+      <!-- Note list area -->
+      <div class="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-7 flex flex-col">
+        <NoteList
+          :notes="notes"
+          :is-loading="isLoading"
+          :active-folder-id="activeFolderId"
+          :active-folder-name="activeFolder?.name ?? null"
+          @create="openCreateModal"
+          @edit="openEditModal"
+          @delete="openDeleteModal"
+          @toggle-pin="handleTogglePin"
+          @archive="openArchiveModal"
+          @restore="handleRestoreNote"
+          @batch-archive="triggerBatchArchive"
+          @batch-restore="handleBatchRestore"
+          @batch-delete="triggerBatchDelete"
+          @batch-move-folder="handleBatchMoveFolder"
+        />
+      </div>
     </main>
 
     <!-- ─── footer ─── -->
@@ -693,24 +917,24 @@ onUnmounted(() => {
 
     <ConfirmModal
       :is-open="isDeleteModalOpen"
-      title="Delete Note Forever"
-      :message="`Permanently delete '${noteToDelete?.title}'? This action is destructive and cannot be undone.`"
+      :title="deleteModalTitle"
+      :message="deleteModalMessage"
       confirm-label="Delete Forever"
       confirm-variant="danger"
       :is-processing="isDeleting"
       @confirm="handleConfirmDelete"
-      @cancel="isDeleteModalOpen = false"
+      @cancel="isDeleteModalOpen = false; isBatchDelete = false;"
     />
 
     <ConfirmModal
       :is-open="isArchiveModalOpen"
-      title="Move to Archive"
-      :message="`Are you sure you want to archive '${noteToArchive?.title}'? You can view, restore, or delete it forever from the Archive view.`"
+      :title="archiveModalTitle"
+      :message="archiveModalMessage"
       confirm-label="Move to Archive"
       confirm-variant="warning"
       :is-processing="isArchiving"
       @confirm="handleConfirmArchive"
-      @cancel="isArchiveModalOpen = false"
+      @cancel="isArchiveModalOpen = false; isBatchArchive = false;"
     />
 
     <!-- Keyboard Shortcuts Modal -->

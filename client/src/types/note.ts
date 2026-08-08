@@ -7,6 +7,7 @@ export interface Note {
   is_pinned: number;
   is_archived: number;
   tags: string; // JSON string of string[]
+  folder_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -19,6 +20,7 @@ export interface CreateNoteDto {
   is_pinned?: number;
   is_archived?: number;
   tags?: string;
+  folder_id?: string | null;
 }
 
 // update note dto
@@ -29,6 +31,7 @@ export interface UpdateNoteDto {
   is_pinned?: number;
   is_archived?: number;
   tags?: string;
+  folder_id?: string | null;
 }
 
 // api error response interface

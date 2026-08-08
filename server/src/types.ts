@@ -1,4 +1,3 @@
-// note interface
 export interface Note {
   id: string;
   title: string;
@@ -6,12 +5,22 @@ export interface Note {
   category: string;
   is_pinned: number;
   is_archived: number;
-  tags: string; // JSON string representation of string[]
+  tags: string;
+  folder_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
-// create note payload
+export interface Folder {
+  id: string;
+  name: string;
+  color: string;
+  is_locked: number;
+  pin_hash: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CreateNotePayload {
   title: string;
   content: string;
@@ -19,9 +28,9 @@ export interface CreateNotePayload {
   is_pinned?: number;
   is_archived?: number;
   tags?: string;
+  folder_id?: string | null;
 }
 
-// update note payload
 export interface UpdateNotePayload {
   title?: string;
   content?: string;
@@ -29,9 +38,9 @@ export interface UpdateNotePayload {
   is_pinned?: number;
   is_archived?: number;
   tags?: string;
+  folder_id?: string | null;
 }
 
-// api error response
 export interface ApiErrorResponse {
   error: string;
   details?: unknown;
