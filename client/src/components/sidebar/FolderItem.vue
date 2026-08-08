@@ -246,7 +246,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
   flex-shrink: 0;
 }
 
-/* context button - only visible on hover */
+/* context button - always visible on mobile and desktop */
 .ctx-btn {
   background: none;
   border: none;
@@ -256,12 +256,11 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
   border-radius: 6px;
   display: flex;
   align-items: center;
-  opacity: 0;
-  transition: opacity 0.15s, background 0.15s;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
   flex-shrink: 0;
 }
-.folder-item:hover .ctx-btn { opacity: 1; }
-.ctx-btn:hover { background: var(--bg-overlay); color: var(--text-primary); }
+.folder-item:hover .ctx-btn, .ctx-btn:hover { opacity: 1; color: var(--text-primary); background: var(--bg-overlay); }
 
 /* context menu */
 .ctx-menu {
