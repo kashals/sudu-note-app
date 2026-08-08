@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, toRef } from 'vue';
 import {
   Search, Grid, List, FileText, Plus, Check, Pin, Archive,
-  CheckSquare, Square, X, Filter, Calendar, Folder
+  CheckSquare, Square, X, Filter, Calendar, Folder, Loader2
 } from '@lucide/vue';
 import type { Note } from '../types/note';
 import NoteCard from './NoteCard.vue';
@@ -431,42 +431,9 @@ function staggerClass(index: number): string {
       </div>
     </div>
 
-    <!-- loading indicator line -->
-    <Transition
-      enter-active-class="transition-opacity duration-200"
-      enter-from-class="opacity-0"
-      enter-to-class="opacity-100"
-      leave-active-class="transition-opacity duration-300"
-      leave-from-class="opacity-100"
-      leave-to-class="opacity-0"
-    >
-      <div
-        v-if="isLoading && notes.length > 0"
-        class="w-full h-[2px] overflow-hidden"
-        style="background: var(--border);"
-      >
-        <div
-          class="h-full"
-          style="background: var(--accent); animation: progressBar 1.2s ease-in-out infinite;"
-        ></div>
-      </div>
-    </Transition>
-
-    <!-- loading skeleton -->
-    <div v-if="isLoading && notes.length === 0" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <div
-        v-for="i in 6"
-        :key="i"
-        class="h-40 border p-5"
-        style="border-color: var(--border); border-radius: 8px;"
-      >
-        <div class="skeleton h-3 w-2/3 mb-4"></div>
-        <div class="space-y-2">
-          <div class="skeleton h-2.5 w-full"></div>
-          <div class="skeleton h-2.5 w-4/5"></div>
-          <div class="skeleton h-2.5 w-3/5"></div>
-        </div>
-      </div>
+    <!-- ── minimalist in-page loading spinner ── -->
+    <div v-if="isLoading" class="flex-1 flex flex-col items-center justify-center py-24 min-h-[300px]">
+      <Loader2 class="h-6 w-6 animate-spin" style="color: var(--text-muted);" />
     </div>
 
     <!-- ── Empty States ── -->

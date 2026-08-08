@@ -92,15 +92,30 @@ let refreshSuccessTimer: ReturnType<typeof setTimeout> | null = null;
 async function handleRefresh() {
   if (refreshState.value === 'loading') return;
   refreshState.value = 'loading';
+  isLoading.value = true;
   if (refreshSuccessTimer) clearTimeout(refreshSuccessTimer);
+  const startTime = Date.now();
+
   try {
-    await fetchNotes();
-    refreshState.value = 'success';
-    refreshSuccessTimer = setTimeout(() => {
-      refreshState.value = 'idle';
-    }, 2000);
-  } catch {
-    refreshState.value = 'idle';
+    await Promise.all([
+      fetchNotes(),
+      loadFolders()
+    ]);
+  } catch (err) {
+    console.error('Refresh error:', err);
+  } finally {
+    const elapsed = Date.now() - startTime;
+    const minDuration = 800;
+    const remaining = Math.max(0, minDuration - elapsed);
+
+    setTimeout(() => {
+      isLoading.value = false;
+      refreshState.value = 'success';
+      showToast('Workspace up to date');
+      refreshSuccessTimer = setTimeout(() => {
+        refreshState.value = 'idle';
+      }, 1500);
+    }, remaining);
   }
 }
 
