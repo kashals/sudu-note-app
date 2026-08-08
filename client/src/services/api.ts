@@ -85,6 +85,15 @@ export async function deleteNote(id: string): Promise<void> {
   }
 }
 
+export async function verifyNotePin(id: string, pin: string): Promise<boolean> {
+  try {
+    const response = await apiClient.post<{ success: boolean }>(`/notes/${id}/verify-pin`, { pin });
+    return response.data.success;
+  } catch (error) {
+    throw formatError(error);
+  }
+}
+
 // ─── folders ─────────────────────────────────────────────────────
 
 export async function getFolders(): Promise<Folder[]> {

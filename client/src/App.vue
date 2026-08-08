@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { FileText, AlertCircle, CheckCircle2, X, Sun, Moon, Keyboard, Loader2, Check, RefreshCw, Menu } from '@lucide/vue';
 import type { Note, CreateNoteDto } from './types/note';
-import { getNotes, createNote, updateNote, deleteNote } from './services/api';
+import { getNotes, createNote, updateNote, deleteNote, verifyNotePin } from './services/api';
 import NoteList from './components/NoteList.vue';
 import NoteForm from './components/NoteForm.vue';
 import ConfirmModal from './components/ConfirmModal.vue';
@@ -74,10 +74,16 @@ const {
   verifyPin
 } = useFolderState();
 
-// ─── locked folder move state ──────────────────────────────────
+// ─── locked note & move state ───────────────────────────────────
 const isMovePinModalOpen = ref(false);
 const movePinTargetFolder = ref<Folder | null>(null);
 const pendingMovePayload = ref<{ noteIdOrJson: string; targetFolderId: string | null } | null>(null);
+const unlockedNoteIds = ref<Set<string>>(new Set());
+const isNoteLockPinModalOpen = ref(false);
+const noteLockPinMode = ref<'set' | 'verify'>('verify');
+const noteLockTarget = ref<Note | null>(null);
+const movePinModalRef = ref<{ triggerError: () => void; reset: () => void } | null>(null);
+const noteLockPinModalRef = ref<{ triggerError: () => void; reset: () => void } | null>(null);
 
 // ─── refresh state ────────────────────────────────────────────
 const refreshState = ref<'idle' | 'loading' | 'success'>('idle');
@@ -220,9 +226,25 @@ function openCreateModal() {
 }
 
 function openEditModal(note: Note) {
+  if (note.is_locked && !unlockedNoteIds.value.has(note.id)) {
+    noteLockTarget.value = note;
+    noteLockPinMode.value = 'verify';
+    isNoteLockPinModalOpen.value = true;
+    return;
+  }
   noteToEdit.value = note;
   formError.value = null;
   isFormOpen.value = true;
+}
+
+function closeNoteForm() {
+  if (noteToEdit.value && noteToEdit.value.is_locked) {
+    const newSet = new Set(unlockedNoteIds.value);
+    newSet.delete(noteToEdit.value.id);
+    unlockedNoteIds.value = newSet;
+  }
+  isFormOpen.value = false;
+  noteToEdit.value = null;
 }
 
 async function handleFormSubmit(payload: CreateNoteDto) {
@@ -253,7 +275,7 @@ async function handleFormSubmit(payload: CreateNoteDto) {
       sortNotes();
     }
 
-    isFormOpen.value = false;
+    closeNoteForm();
 
     try {
       const updated = await updateNote(targetId, payload);
@@ -711,7 +733,70 @@ async function handleVerifyMovePin(pin: string) {
       await executeMoveNote(payload.noteIdOrJson, payload.targetFolderId);
     }
   } else {
-    showToast('Incorrect PIN', 'error');
+    movePinModalRef.value?.triggerError();
+  }
+}
+
+async function handleVerifyNotePin(pin: string) {
+  if (noteLockPinMode.value === 'verify') {
+    if (!noteLockTarget.value) return;
+    const ok = await verifyNotePin(noteLockTarget.value.id, pin);
+    if (ok) {
+      unlockedNoteIds.value = new Set([...unlockedNoteIds.value, noteLockTarget.value.id]);
+      isNoteLockPinModalOpen.value = false;
+      const targetNote = noteLockTarget.value;
+      noteLockTarget.value = null;
+      noteToEdit.value = targetNote;
+      isFormOpen.value = true;
+    } else {
+      noteLockPinModalRef.value?.triggerError();
+    }
+  } else if (noteLockPinMode.value === 'set') {
+    if (!noteToEdit.value) return;
+    const target = noteToEdit.value;
+    try {
+      const updated = await updateNote(target.id, {
+        title: target.title,
+        content: target.content,
+        is_locked: 1,
+        pin_hash: pin
+      });
+      const newSet = new Set(unlockedNoteIds.value);
+      newSet.delete(target.id);
+      unlockedNoteIds.value = newSet;
+      const idx = notes.value.findIndex(n => n.id === target.id);
+      if (idx !== -1) notes.value[idx] = updated;
+      noteToEdit.value = updated;
+      isNoteLockPinModalOpen.value = false;
+      showToast('Note locked with PIN');
+    } catch {
+      showToast('Failed to lock note', 'error');
+    }
+  }
+}
+
+async function handleToggleNoteLock() {
+  if (!noteToEdit.value) return;
+  if (noteToEdit.value.is_locked) {
+    // unlock note
+    const target = noteToEdit.value;
+    try {
+      const updated = await updateNote(target.id, {
+        title: target.title,
+        content: target.content,
+        is_locked: 0,
+        pin_hash: null
+      });
+      const idx = notes.value.findIndex(n => n.id === target.id);
+      if (idx !== -1) notes.value[idx] = updated;
+      noteToEdit.value = updated;
+      showToast('Note lock removed');
+    } catch {
+      showToast('Failed to unlock note', 'error');
+    }
+  } else {
+    noteLockPinMode.value = 'set';
+    isNoteLockPinModalOpen.value = true;
   }
 }
 
@@ -935,6 +1020,7 @@ onUnmounted(() => {
           :notes="notes"
           :is-loading="isLoading"
           v-model:show-archived="showArchived"
+          :unlocked-note-ids="unlockedNoteIds"
           :active-folder-id="activeFolderId"
           :active-folder-name="activeFolder?.name ?? null"
           @create="openCreateModal"
@@ -968,7 +1054,8 @@ onUnmounted(() => {
       :server-error="formError"
       @submit="handleFormSubmit"
       @autosave="handleAutoSave"
-      @cancel="isFormOpen = false"
+      @toggle-lock="handleToggleNoteLock"
+      @cancel="closeNoteForm"
     />
 
     <ConfirmModal
@@ -1078,11 +1165,20 @@ onUnmounted(() => {
     </Transition>
     <!-- Pin verification modal for moving to locked folders -->
     <PinModal
+      ref="movePinModalRef"
       v-model="isMovePinModalOpen"
       mode="verify"
       :folder-name="movePinTargetFolder?.name || ''"
-      @submit="handleVerifyMovePin"
+      @confirm="handleVerifyMovePin"
       @cancel="isMovePinModalOpen = false; pendingMovePayload = null;"
+    />
+    <!-- Pin modal for locking and opening locked notes -->
+    <PinModal
+      ref="noteLockPinModalRef"
+      v-model="isNoteLockPinModalOpen"
+      :mode="noteLockPinMode"
+      @confirm="handleVerifyNotePin"
+      @cancel="isNoteLockPinModalOpen = false; noteLockTarget = null;"
     />
   </div>
 </template>

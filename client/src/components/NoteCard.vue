@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Edit2, Trash2, Clock, Pin, RotateCcw, CheckSquare, Square } from '@lucide/vue';
+import { Edit2, Trash2, Clock, Pin, RotateCcw, CheckSquare, Square, Lock } from '@lucide/vue';
 import type { Note } from '../types/note';
 import TagPill from './ui/TagPill.vue';
 import CategoryBadge from './ui/CategoryBadge.vue';
@@ -14,6 +14,7 @@ const props = defineProps<{
   isSelected?: boolean;
   selectedNoteIds?: string[];
   selectedNotes?: Note[];
+  isUnlocked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -283,8 +284,9 @@ function handleTouchEnd() {
             }"
           />
         </button>
-        <span class="font-mono text-[10px] select-none" style="color: var(--text-muted);">
-          {{ noteIdFormatted }}
+        <span class="font-mono text-[10px] select-none flex items-center gap-1.5" style="color: var(--text-muted);">
+          <span>{{ noteIdFormatted }}</span>
+          <Lock v-if="note.is_locked && !isUnlocked" class="h-3.5 w-3.5 text-gray-400 shrink-0" title="Locked note (PIN required)" />
         </span>
       </div>
 
@@ -302,10 +304,10 @@ function handleTouchEnd() {
       </h4>
       <p
         class="hidden md:block text-xs truncate flex-1 font-mono"
-        :class="!plainContent ? 'italic opacity-60' : 'opacity-80'"
+        :class="!plainContent || (note.is_locked && !isUnlocked) ? 'italic opacity-60' : 'opacity-80'"
         style="color: var(--text-secondary);"
       >
-        {{ plainContent || 'No content added' }}
+        {{ (note.is_locked && !isUnlocked) ? '•••••••••••• (Locked note - PIN required)' : (plainContent || 'No content added') }}
       </p>
     </div>
 
@@ -434,8 +436,9 @@ function handleTouchEnd() {
               }"
             />
           </button>
-          <span class="font-mono text-[10px]" style="color: var(--text-muted);">
-            {{ noteIdFormatted }}
+          <span class="font-mono text-[10px] flex items-center gap-1.5" style="color: var(--text-muted);">
+            <span>{{ noteIdFormatted }}</span>
+            <Lock v-if="note.is_locked && !isUnlocked" class="h-3.5 w-3.5 text-gray-400 shrink-0" title="Locked note (PIN required)" />
           </span>
         </div>
 
@@ -451,10 +454,10 @@ function handleTouchEnd() {
       <!-- content preview -->
       <p
         class="text-xs leading-relaxed line-clamp-3 mb-4 font-mono"
-        :class="!plainContent ? 'italic opacity-60' : 'opacity-80'"
+        :class="!plainContent || (note.is_locked && !isUnlocked) ? 'italic opacity-60' : 'opacity-80'"
         style="color: var(--text-secondary);"
       >
-        {{ plainContent || 'No content added' }}
+        {{ (note.is_locked && !isUnlocked) ? '•••••••••••• (Locked note - PIN required)' : (plainContent || 'No content added') }}
       </p>
 
       <!-- tags preview list -->

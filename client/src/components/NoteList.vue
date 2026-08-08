@@ -18,6 +18,7 @@ const props = defineProps<{
   activeFolderId?: string | null;
   activeFolderName?: string | null;
   showArchived?: boolean;
+  unlockedNoteIds?: Set<string>;
 }>();
 
 // component emits
@@ -658,6 +659,7 @@ function staggerClass(index: number): string {
               :note-number="noteSequenceMap[note.id]"
               :is-select-mode="isSelectMode"
               :is-selected="selectedNoteIds.includes(note.id)"
+              :is-unlocked="unlockedNoteIds?.has(note.id)"
               :selected-note-ids="selectedNoteIds"
               :selected-notes="notes.filter(n => selectedNoteIds.includes(n.id))"
               class="animate-fade-up"
@@ -698,6 +700,7 @@ function staggerClass(index: number): string {
               :note-number="noteSequenceMap[note.id]"
               :is-select-mode="isSelectMode"
               :is-selected="selectedNoteIds.includes(note.id)"
+              :is-unlocked="unlockedNoteIds?.has(note.id)"
               :selected-note-ids="selectedNoteIds"
               :selected-notes="notes.filter(n => selectedNoteIds.includes(n.id))"
               :class="`animate-fade-up ${staggerClass(index)}`"

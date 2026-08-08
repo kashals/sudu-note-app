@@ -26,6 +26,7 @@ const emit = defineEmits<{
   (e: 'submit', payload: CreateNoteDto): void;
   (e: 'autosave', payload: CreateNoteDto): void;
   (e: 'cancel'): void;
+  (e: 'toggle-lock'): void;
 }>();
 
 // Form state
@@ -411,6 +412,7 @@ defineExpose({ requestClose });
             :tag-error="tagError"
             :is-pinned="isPinned"
             :auto-save="autoSave"
+            :is-locked="Boolean(noteToEdit?.is_locked)"
             @update:category="category = $event; markDirty(); triggerAutoSave(getFormData);"
             @update:custom-category-value="customCategoryValue = $event; markDirty(); triggerAutoSave(getFormData);"
             @add-tag="addTag"
@@ -418,6 +420,7 @@ defineExpose({ requestClose });
             @toggle-quick-tag="toggleQuickTag"
             @toggle-pin="isPinned = !isPinned; markDirty(); triggerAutoSave(getFormData);"
             @toggle-autosave="toggleAutoSave"
+            @toggle-lock="emit('toggle-lock')"
             @open-shortcuts="isShortcutsModalOpen = true"
             @close="showSidebar = false"
           />

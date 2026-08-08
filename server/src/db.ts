@@ -92,6 +92,20 @@ async function initSchema(db: Database): Promise<void> {
     // column already exists
   }
 
+  // Add is_locked column to notes if missing
+  try {
+    await db.exec("ALTER TABLE notes ADD COLUMN is_locked INTEGER DEFAULT 0;");
+  } catch (err) {
+    // column already exists
+  }
+
+  // Add pin_hash column to notes if missing
+  try {
+    await db.exec("ALTER TABLE notes ADD COLUMN pin_hash TEXT DEFAULT NULL;");
+  } catch (err) {
+    // column already exists
+  }
+
   // System settings table
   await db.exec(`
     CREATE TABLE IF NOT EXISTS system_settings (

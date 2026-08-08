@@ -7,6 +7,9 @@ export interface Note {
   is_archived: number;
   tags: string;
   folder_id: string | null;
+  is_locked?: number;
+  pin_hash?: string | null;
+  has_pin?: boolean;
   created_at: string;
   updated_at: string;
 }

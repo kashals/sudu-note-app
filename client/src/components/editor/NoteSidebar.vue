@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HelpCircle, X } from '@lucide/vue';
+import { HelpCircle, X, Lock, Unlock } from '@lucide/vue';
 import CategorySelect from './CategorySelect.vue';
 import TagManager from './TagManager.vue';
 
@@ -14,6 +14,7 @@ const props = defineProps<{
   tagError?: string | null;
   isPinned: boolean;
   autoSave: boolean;
+  isLocked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   (e: 'toggle-quick-tag', tag: string): void;
   (e: 'toggle-pin'): void;
   (e: 'toggle-autosave'): void;
+  (e: 'toggle-lock'): void;
   (e: 'open-shortcuts'): void;
   (e: 'close'): void;
 }>();
@@ -111,6 +113,29 @@ const emit = defineEmits<{
             :class="{ 'autosave-toggle--on': autoSave }"
             :title="autoSave ? 'Auto-Save ON — click to disable' : 'Auto-Save OFF — click to enable'"
             @click="emit('toggle-autosave')"
+          >
+            <span class="autosave-thumb" />
+          </button>
+        </div>
+
+        <!-- Lock Note Toggle -->
+        <div class="pt-4 border-t flex items-center justify-between select-none" style="border-color: var(--border-subtle);">
+          <div>
+            <span class="block text-[11px] font-mono flex items-center gap-1.5" style="color: var(--text-secondary);">
+              <Lock v-if="isLocked" class="w-3.5 h-3.5 text-amber-400" />
+              <Unlock v-else class="w-3.5 h-3.5" style="color: var(--accent);" />
+              <span>// Lock Note</span>
+            </span>
+            <span class="block text-[10px] font-mono mt-0.5" style="color: var(--text-muted);">
+              {{ isLocked ? 'Note is password protected' : 'Protect note with 4-digit PIN' }}
+            </span>
+          </div>
+          <button
+            type="button"
+            class="autosave-toggle"
+            :class="{ 'autosave-toggle--on': isLocked }"
+            :title="isLocked ? 'Note is locked — click to remove PIN' : 'Note is unlocked — click to set PIN'"
+            @click="emit('toggle-lock')"
           >
             <span class="autosave-thumb" />
           </button>

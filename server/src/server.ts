@@ -36,7 +36,9 @@ const createNoteSchema = z.object({
   is_pinned: z.number().int().min(0).max(1).default(0),
   is_archived: z.number().int().min(0).max(1).default(0),
   tags: z.string().default('[]'),
-  folder_id: z.string().uuid().nullable().optional()
+  folder_id: z.string().uuid().nullable().optional(),
+  is_locked: z.number().int().min(0).max(1).default(0),
+  pin_hash: z.string().nullable().optional()
 });
 
 const updateNoteSchema = z.object({
@@ -46,7 +48,9 @@ const updateNoteSchema = z.object({
   is_pinned: z.number().int().min(0).max(1).optional(),
   is_archived: z.number().int().min(0).max(1).optional(),
   tags: z.string().optional(),
-  folder_id: z.string().uuid().nullable().optional()
+  folder_id: z.string().uuid().nullable().optional(),
+  is_locked: z.number().int().min(0).max(1).optional(),
+  pin_hash: z.string().nullable().optional()
 });
 
 const createFolderSchema = z.object({
@@ -80,9 +84,14 @@ app.get('/api/notes', async (_req: Request, res: Response, next: NextFunction) =
   try {
     const db = await getDb();
     const notes = await db.all<Note[]>(
-      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, created_at, updated_at FROM notes ORDER BY is_pinned DESC, updated_at DESC'
+      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, created_at, updated_at FROM notes ORDER BY is_pinned DESC, updated_at DESC'
     );
-    res.json(notes);
+    const formatted = notes.map(n => ({
+      ...n,
+      is_locked: n.is_locked || 0,
+      has_pin: Boolean(n.pin_hash)
+    }));
+    res.json(formatted);
   } catch (error) {
     next(error);
   }
@@ -121,19 +130,24 @@ app.post('/api/notes', async (req: Request, res: Response, next: NextFunction) =
       return;
     }
 
-    const { title, content, category, is_pinned, is_archived, tags, folder_id } = parseResult.data;
+    const { title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash } = parseResult.data;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+    const processedPinHash = pin_hash && pin_hash.length === 4 ? hashPin(pin_hash) : (pin_hash || null);
+    const processedIsLocked = is_locked !== undefined ? is_locked : (processedPinHash ? 1 : 0);
 
     const db = await getDb();
     await db.run(
-      'INSERT INTO notes (id, title, content, category, is_pinned, is_archived, tags, folder_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, title, content, category, is_pinned, is_archived, tags, folder_id ?? null, now, now]
+      'INSERT INTO notes (id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title, content, category, is_pinned, is_archived, tags, folder_id ?? null, processedIsLocked, processedPinHash, now, now]
     );
 
     const newNote: Note = {
       id, title, content, category, is_pinned, is_archived, tags,
       folder_id: folder_id ?? null,
+      is_locked: processedIsLocked,
+      pin_hash: processedPinHash,
+      has_pin: Boolean(processedPinHash),
       created_at: now,
       updated_at: now
     };
@@ -160,7 +174,7 @@ app.put('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
 
     const db = await getDb();
     const existingNote = await db.get<Note>(
-      'SELECT id, category, is_pinned, is_archived, tags, folder_id FROM notes WHERE id = ?',
+      'SELECT id, category, is_pinned, is_archived, tags, folder_id, pin_hash FROM notes WHERE id = ?',
       [id]
     );
 
@@ -169,25 +183,60 @@ app.put('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    const { title, content, category, is_pinned, is_archived, tags, folder_id } = parseResult.data;
+    const { title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash } = parseResult.data;
     const finalCategory = category !== undefined ? category : existingNote.category;
     const finalIsPinned = is_pinned !== undefined ? is_pinned : existingNote.is_pinned;
     const finalIsArchived = is_archived !== undefined ? is_archived : existingNote.is_archived;
     const finalTags = tags !== undefined ? tags : existingNote.tags;
     const finalFolderId = folder_id !== undefined ? folder_id : existingNote.folder_id;
+    let finalPinHash = existingNote.pin_hash;
+    if (pin_hash !== undefined) {
+      finalPinHash = pin_hash && pin_hash.length === 4 ? hashPin(pin_hash) : pin_hash;
+    }
+    const finalIsLocked = is_locked !== undefined ? is_locked : (finalPinHash ? 1 : 0);
     const now = new Date().toISOString();
 
     await db.run(
-      'UPDATE notes SET title = ?, content = ?, category = ?, is_pinned = ?, is_archived = ?, tags = ?, folder_id = ?, updated_at = ? WHERE id = ?',
-      [title, content, finalCategory, finalIsPinned, finalIsArchived, finalTags, finalFolderId, now, id]
+      'UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), category = ?, is_pinned = ?, is_archived = ?, tags = ?, folder_id = ?, is_locked = ?, pin_hash = ?, updated_at = ? WHERE id = ?',
+      [title ?? null, content ?? null, finalCategory, finalIsPinned, finalIsArchived, finalTags, finalFolderId, finalIsLocked, finalPinHash, now, id]
     );
 
     const updatedNote = await db.get<Note>(
-      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, created_at, updated_at FROM notes WHERE id = ?',
+      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, created_at, updated_at FROM notes WHERE id = ?',
       [id]
     );
 
-    res.json(updatedNote);
+    res.json({
+      ...updatedNote,
+      is_locked: updatedNote?.is_locked || 0,
+      has_pin: Boolean(updatedNote?.pin_hash)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// verify note pin
+app.post('/api/notes/:id/verify-pin', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { pin } = req.body;
+    if (!pin || typeof pin !== 'string') {
+      res.status(400).json({ error: 'pin is required' });
+      return;
+    }
+    const db = await getDb();
+    const note = await db.get<Note>('SELECT pin_hash FROM notes WHERE id = ?', [id]);
+    if (!note) {
+      res.status(404).json({ error: 'note not found' });
+      return;
+    }
+    if (!note.pin_hash) {
+      res.json({ success: true });
+      return;
+    }
+    const success = hashPin(pin) === note.pin_hash;
+    res.json({ success });
   } catch (error) {
     next(error);
   }
