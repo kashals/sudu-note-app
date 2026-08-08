@@ -1,76 +1,84 @@
 <template>
   <Teleport to="body">
     <Transition name="modal-fade">
-      <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);" @click.self="emit('cancel')">
-        <div class="animate-scale-in w-full max-w-md border" style="background: var(--bg-surface); border-color: var(--border);">
-          <!-- header -->
-          <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--border);">
-            <div class="flex items-center gap-2.5">
-              <ShieldAlert class="h-4 w-4 shrink-0" style="color: var(--accent);" />
-              <h3 class="text-sm font-semibold" style="color: var(--text-primary);">Configure Recovery Question</h3>
+      <div v-if="modelValue" class="modal-backdrop" @click.self="handleBackdropClick">
+        <div class="security-modal" role="dialog" :aria-label="mode === 'setup' ? 'Security Question Setup' : 'Reset PIN'">
+          <!-- Header -->
+          <div class="modal-header">
+            <div class="shield-icon-wrap">
+              <ShieldQuestion class="w-5 h-5 text-accent" />
             </div>
-            <button type="button" class="transition-colors" style="color: var(--text-muted);" @click="emit('cancel')">
-              <X class="h-4 w-4" />
+            <div>
+              <h2 class="modal-title">
+                {{ mode === 'setup' ? 'Security Question' : 'Security Recovery' }}
+              </h2>
+              <p class="modal-subtitle">
+                {{ mode === 'setup' ? 'Set up recovery for locked folders & notes' : 'Answer your security question to reset PIN' }}
+              </p>
+            </div>
+            <button class="modal-close" @click="$emit('update:modelValue', false)" aria-label="Close">
+              <X class="w-4 h-4" />
             </button>
           </div>
 
-          <!-- body -->
-          <div class="px-5 py-5 flex flex-col gap-4 text-xs" style="color: var(--text-secondary);">
-            <p class="leading-relaxed opacity-80">
-              Configure a system-wide security question. If you forget any folder PIN, you can answer this question to unlock it.
-            </p>
-
-            <div class="flex flex-col gap-2">
-              <label class="font-semibold uppercase tracking-wider text-[10px]" style="color: var(--text-muted);">Choose a Question</label>
-              <select v-model="selectedPreset" class="preset-select">
-                <option v-for="q in PRESET_QUESTIONS" :key="q" :value="q">{{ q }}</option>
-                <option value="custom">Write a custom question...</option>
+          <!-- Body Form -->
+          <form @submit.prevent="handleSubmit" class="modal-body">
+            <!-- Setup Mode Question Selection -->
+            <div v-if="mode === 'setup'" class="form-group">
+              <label class="form-label">Select Security Question</label>
+              <select v-model="selectedPreset" class="form-select" required>
+                <option v-for="q in presetQuestions" :key="q" :value="q">
+                  {{ q }}
+                </option>
+                <option value="__custom__">Type a custom question...</option>
               </select>
-            </div>
 
-            <div v-if="selectedPreset === 'custom'" class="flex flex-col gap-2">
-              <label class="font-semibold uppercase tracking-wider text-[10px]" style="color: var(--text-muted);">Custom Question</label>
               <input
-                v-model.trim="customQuestion"
+                v-if="selectedPreset === '__custom__'"
+                v-model="customQuestion"
                 type="text"
-                class="field-input"
-                placeholder="Type your security question here..."
-                maxlength="100"
+                class="form-input mt-2"
+                placeholder="Enter your custom question..."
+                required
               />
             </div>
 
-            <div class="flex flex-col gap-2">
-              <label class="font-semibold uppercase tracking-wider text-[10px]" style="color: var(--text-muted);">Your Answer</label>
-              <input
-                v-model.trim="answer"
-                type="text"
-                class="field-input"
-                placeholder="Type the answer..."
-                maxlength="100"
-                @keydown.enter="submit"
-              />
-              <p class="text-[10px] opacity-50" style="color: var(--text-muted);">* Answers are case-insensitive when resetting.</p>
+            <!-- Recovery Mode Display Question -->
+            <div v-else class="form-group">
+              <label class="form-label">Your Security Question</label>
+              <div class="question-box">
+                {{ currentQuestion || 'Loading security question...' }}
+              </div>
             </div>
-          </div>
 
-          <!-- actions -->
-          <div class="flex items-center justify-end gap-2 border-t px-5 py-4" style="border-color: var(--border);">
-            <button
-              type="button"
-              class="px-4 py-2 text-xs font-medium border transition-colors"
-              style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary);"
-              @click="emit('cancel')"
-            >
-              Cancel
-            </button>
-            <PushButton
-              variant="primary"
-              :disabled="!isFormValid"
-              @click="submit"
-            >
-              Configure Question
-            </PushButton>
-          </div>
+            <!-- Security Answer Input -->
+            <div class="form-group">
+              <label class="form-label">Security Answer</label>
+              <input
+                v-model="answer"
+                type="text"
+                class="form-input"
+                :class="{ 'border-red-500': hasError }"
+                placeholder="Enter your answer..."
+                required
+                autocomplete="off"
+              />
+              <p v-if="hasError" class="error-text">
+                {{ errorMessage || 'Incorrect answer. Please try again.' }}
+              </p>
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="modal-footer">
+              <PushButton variant="secondary" type="button" @click="$emit('update:modelValue', false)">
+                Cancel
+              </PushButton>
+              <PushButton variant="primary" type="submit" :disabled="isSubmitting || !isValid">
+                <Loader2 v-if="isSubmitting" class="w-3.5 h-3.5 animate-spin" />
+                <span>{{ mode === 'setup' ? 'Save & Continue' : 'Unlock & Reset PIN' }}</span>
+              </PushButton>
+            </div>
+          </form>
         </div>
       </div>
     </Transition>
@@ -79,101 +87,247 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { ShieldAlert, X } from '@lucide/vue';
+import { ShieldQuestion, X, Loader2 } from '@lucide/vue';
 import PushButton from '../PushButton.vue';
+import { getSecurityQuestion, setSecurityQuestion, resetFolderPin } from '../../services/api';
 
-const PRESET_QUESTIONS = [
-  'What was the name of your first pet?',
-  "What is your mother's maiden name?",
-  'What city were you born in?',
-  'What was the name of your first school?',
-];
-
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean;
-}>();
+  mode?: 'setup' | 'reset';
+  folderId?: string | null;
+}>(), {
+  mode: 'setup',
+  folderId: null
+});
 
 const emit = defineEmits<{
   (e: 'update:modelValue', val: boolean): void;
-  (e: 'save', payload: { question: string; answer: string }): void;
-  (e: 'cancel'): void;
+  (e: 'setup-complete'): void;
+  (e: 'reset-complete', folderId: string): void;
 }>();
 
-const selectedPreset = ref<string>(PRESET_QUESTIONS[0] || 'custom');
+const presetQuestions = [
+  "What was the name of your first pet?",
+  "In what city were you born?",
+  "What was your childhood nickname?",
+  "What is your mother's maiden name?",
+  "What was the name of your primary school?"
+];
+
+const selectedPreset = ref(presetQuestions[0]);
 const customQuestion = ref('');
 const answer = ref('');
+const currentQuestion = ref('');
+const isSubmitting = ref(false);
+const hasError = ref(false);
+const errorMessage = ref('');
 
-const isFormValid = computed(() => {
-  const preset = selectedPreset.value || '';
-  const q = preset === 'custom' ? customQuestion.value.trim() : preset.trim();
-  return q.length > 5 && answer.value.trim().length > 1;
+const finalQuestion = computed(() => {
+  if (selectedPreset.value === '__custom__') {
+    return customQuestion.value.trim();
+  }
+  return selectedPreset.value;
 });
 
-watch(() => props.modelValue, (open) => {
+const isValid = computed(() => {
+  if (props.mode === 'setup') {
+    return Boolean(finalQuestion.value && answer.value.trim());
+  }
+  return Boolean(answer.value.trim());
+});
+
+watch(() => props.modelValue, async (open) => {
   if (open) {
-    selectedPreset.value = PRESET_QUESTIONS[0] || 'custom';
-    customQuestion.value = '';
     answer.value = '';
+    hasError.value = false;
+    errorMessage.value = '';
+    if (props.mode === 'reset') {
+      try {
+        const res = await getSecurityQuestion();
+        if (res.configured && res.question) {
+          currentQuestion.value = res.question;
+        } else {
+          currentQuestion.value = 'Security question not configured.';
+        }
+      } catch {
+        currentQuestion.value = 'Failed to load security question.';
+      }
+    }
   }
 });
 
-function submit() {
-  if (!isFormValid.value) return;
-  const preset = selectedPreset.value || '';
-  const q = preset === 'custom' ? customQuestion.value.trim() : preset.trim();
-  emit('save', { question: q, answer: answer.value.trim() });
+async function handleSubmit() {
+  if (!isValid.value || isSubmitting.value) return;
+  isSubmitting.value = true;
+  hasError.value = false;
+
+  try {
+    if (props.mode === 'setup') {
+      await setSecurityQuestion(finalQuestion.value, answer.value.trim());
+      emit('setup-complete');
+      emit('update:modelValue', false);
+    } else {
+      if (!props.folderId) {
+        throw new Error('No target folder specified for reset.');
+      }
+      const success = await resetFolderPin(props.folderId, answer.value.trim());
+      if (success) {
+        emit('reset-complete', props.folderId);
+        emit('update:modelValue', false);
+      } else {
+        hasError.value = true;
+        errorMessage.value = 'Incorrect security answer. Please try again.';
+      }
+    }
+  } catch (err: any) {
+    hasError.value = true;
+    errorMessage.value = err.message || 'Operation failed. Try again.';
+  } finally {
+    isSubmitting.value = false;
+  }
+}
+
+function handleBackdropClick() {
+  emit('update:modelValue', false);
 }
 </script>
 
 <style scoped>
-.preset-select {
-  width: 100%;
-  background: var(--bg-raised);
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  outline: none;
-  font-family: inherit;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a9e8a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-  background-repeat: no-repeat;
-  background-position: right 14px center;
-  background-size: 14px;
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
 }
-.preset-select option {
+
+.security-modal {
   background: var(--bg-surface);
-  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+  overflow: hidden;
 }
 
-.field-input {
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 22px 20px 0;
+}
+
+.shield-icon-wrap {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(137, 180, 250, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modal-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 3px;
+}
+
+.modal-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  margin-left: auto;
+  display: flex;
+  transition: color 0.15s, background 0.15s;
+}
+.modal-close:hover {
+  color: var(--text-primary);
+  background: var(--border-subtle);
+}
+
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.form-select, .form-input {
   width: 100%;
+  padding: 9px 12px;
   background: var(--bg-raised);
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   color: var(--text-primary);
   font-size: 0.85rem;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.15s, box-shadow 0.15s;
   font-family: inherit;
 }
-.field-input::placeholder { color: var(--text-muted); }
-.field-input:focus { border-color: var(--accent); }
 
-/* transitions */
-.modal-fade-enter-active, .modal-fade-leave-active {
-  transition: opacity 0.24s ease;
+.form-select:focus, .form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
-.modal-fade-enter-from, .modal-fade-leave-to {
-  opacity: 0;
+
+.question-box {
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: var(--accent);
+  font-weight: 500;
 }
-.modal-fade-enter-active .animate-scale-in, .modal-fade-leave-active .animate-scale-in {
+
+.error-text {
+  font-size: 0.75rem;
+  color: #ef4444;
+  margin: 0;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.24s ease; }
+.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
+.modal-fade-enter-active .security-modal, .modal-fade-leave-active .security-modal {
   transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.modal-fade-enter-from .animate-scale-in, .modal-fade-leave-to .animate-scale-in {
+.modal-fade-enter-from .security-modal, .modal-fade-leave-to .security-modal {
   transform: scale(0.9) translateY(10px);
 }
 </style>

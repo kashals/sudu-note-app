@@ -701,16 +701,30 @@ function triggerBatchArchive(noteIds: string[]) {
 function dismissConnectionError() { connectionError.value = null; }
 
 // ─── move note to folder (drag-drop and batch) ─────────────────────
-async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | null) {
+async function handleMoveNote(
+  noteIdOrJson: string | { noteId: string; targetFolderId: string | null },
+  targetFolderIdArg?: string | null
+) {
+  let noteIdOrJsonStr = '';
+  let targetFolderId: string | null = null;
+
+  if (typeof noteIdOrJson === 'object' && noteIdOrJson !== null && 'noteId' in noteIdOrJson) {
+    noteIdOrJsonStr = noteIdOrJson.noteId;
+    targetFolderId = noteIdOrJson.targetFolderId;
+  } else {
+    noteIdOrJsonStr = String(noteIdOrJson);
+    targetFolderId = targetFolderIdArg ?? null;
+  }
+
   let noteIds: string[] = [];
   try {
-    if (noteIdOrJson.startsWith('[')) {
-      noteIds = JSON.parse(noteIdOrJson);
+    if (noteIdOrJsonStr.startsWith('[')) {
+      noteIds = JSON.parse(noteIdOrJsonStr);
     } else {
-      noteIds = [noteIdOrJson];
+      noteIds = [noteIdOrJsonStr];
     }
   } catch {
-    noteIds = [noteIdOrJson];
+    noteIds = [noteIdOrJsonStr];
   }
 
   // Check if notes are being moved OUT of a locked source folder
@@ -728,7 +742,7 @@ async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | nul
 
   if (lockedSourceFolder) {
     movePinTargetFolder.value = lockedSourceFolder;
-    pendingMovePayload.value = { noteIdOrJson, targetFolderId };
+    pendingMovePayload.value = { noteIdOrJson: noteIdOrJsonStr, targetFolderId };
     isMovePinModalOpen.value = true;
     return;
   }
@@ -738,14 +752,14 @@ async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | nul
     const targetFolder = folders.value.find(f => f.id === targetFolderId);
     if (targetFolder && targetFolder.is_locked && !moveVerifiedFolderIds.value.has(targetFolder.id)) {
       movePinTargetFolder.value = targetFolder;
-      pendingMovePayload.value = { noteIdOrJson, targetFolderId };
+      pendingMovePayload.value = { noteIdOrJson: noteIdOrJsonStr, targetFolderId };
       isMovePinModalOpen.value = true;
       return;
     }
   }
 
   moveVerifiedFolderIds.value = new Set();
-  await executeMoveNote(noteIdOrJson, targetFolderId);
+  await executeMoveNote(noteIdOrJsonStr, targetFolderId);
 }
 
 async function handleVerifyMovePin(pin: string) {

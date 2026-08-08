@@ -125,78 +125,19 @@
       @cancel="showDeleteConfirm = false"
     />
 
-    <!-- Forgot PIN Reset Dialog -->
-    <Teleport to="body">
-      <Transition name="modal-fade">
-        <div v-if="showForgotConfirm" class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);" @click.self="showForgotConfirm = false">
-          <div class="animate-scale-in w-full max-w-md border" style="background: var(--bg-surface); border-color: var(--border);">
-            <!-- header -->
-            <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--border);">
-              <div class="flex items-center gap-2.5">
-                <AlertTriangle class="h-4 w-4 shrink-0" style="color: #fb923c;" />
-                <h3 class="text-sm font-semibold" style="color: var(--text-primary);">Reset Folder Lock?</h3>
-              </div>
-              <button type="button" class="transition-colors" style="color: var(--text-muted);" @click="showForgotConfirm = false">
-                <X class="h-4 w-4" />
-              </button>
-            </div>
-
-            <!-- body -->
-            <div class="px-5 py-5 flex flex-col gap-3 text-xs" style="color: var(--text-secondary);">
-              <p class="leading-relaxed opacity-80">
-                To remove the lock on <strong>{{ forgotTargetFolder?.name }}</strong>, please answer the recovery question.
-              </p>
-              
-              <div class="flex flex-col gap-1.5 mt-2">
-                <span class="font-semibold uppercase tracking-wider text-[10px]" style="color: var(--text-muted);">Security Question</span>
-                <p class="text-xs font-semibold py-1" style="color: var(--text-primary);">
-                  {{ securityQuestionText }}
-                </p>
-              </div>
-
-              <div class="flex flex-col gap-1.5 mt-1">
-                <span class="font-semibold uppercase tracking-wider text-[10px]" style="color: var(--text-muted);">Your Answer</span>
-                <input
-                  v-model="forgotAnswerInput"
-                  type="text"
-                  class="reset-input"
-                  placeholder="Type the security answer"
-                  @keydown.enter="confirmReset"
-                />
-                <p v-if="forgotError" class="text-[10px] mt-1 font-semibold" style="color: #ef4444;">
-                  Incorrect answer. Please try again.
-                </p>
-              </div>
-            </div>
-
-            <!-- actions -->
-            <div class="flex items-center justify-end gap-2 border-t px-5 py-4" style="border-color: var(--border);">
-              <button
-                type="button"
-                class="px-4 py-2 text-xs font-medium border transition-colors"
-                style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary);"
-                @click="showForgotConfirm = false"
-              >
-                Cancel
-              </button>
-              <PushButton
-                variant="primary"
-                :disabled="!forgotAnswerInput.trim()"
-                @click="confirmReset"
-              >
-                Reset Lock
-              </PushButton>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
     <!-- Security Question Setup Modal -->
     <SecurityQuestionModal
       v-model="showSetupQuestionModal"
-      @save="handleSaveSecurityQuestion"
-      @cancel="showSetupQuestionModal = false"
+      mode="setup"
+      @setup-complete="handleSetupQuestionComplete"
+    />
+
+    <!-- Forgot PIN Reset Modal -->
+    <SecurityQuestionModal
+      v-model="showForgotConfirm"
+      mode="reset"
+      :folder-id="forgotTargetFolder?.id ?? null"
+      @reset-complete="handleResetComplete"
     />
   </aside>
 </template>
@@ -392,17 +333,10 @@ async function handlePinConfirm(pin: string) {
 // ── forgot PIN reset ──────────────────────────────────────────────
 const showForgotConfirm = ref(false);
 const forgotTargetFolder = ref<Folder | null>(null);
-const forgotAnswerInput = ref('');
-const forgotError = ref(false);
-const securityQuestionText = ref('');
-
 const showSetupQuestionModal = ref(false);
 const pendingLockFolder = ref<Folder | null>(null);
 
-async function handleSaveSecurityQuestion({ question, answer }: { question: string; answer: string }) {
-  await setupSecurityQuestion(question, answer);
-  showSetupQuestionModal.value = false;
-  
+function handleSetupQuestionComplete() {
   if (pendingLockFolder.value) {
     pinTargetFolder.value = pendingLockFolder.value;
     pinMode.value = 'set';
@@ -412,30 +346,15 @@ async function handleSaveSecurityQuestion({ question, answer }: { question: stri
 }
 
 async function handleForgotPin() {
-  const check = await checkSecurityQuestion();
-  if (check.configured) {
-    securityQuestionText.value = check.question || '';
-    forgotTargetFolder.value = pinTargetFolder.value;
-    forgotAnswerInput.value = '';
-    forgotError.value = false;
-    showForgotConfirm.value = true;
-  }
+  forgotTargetFolder.value = pinTargetFolder.value;
   showPinModal.value = false;
-  pinTargetFolder.value = null;
+  showForgotConfirm.value = true;
 }
 
-async function confirmReset() {
-  if (!forgotTargetFolder.value || !forgotAnswerInput.value.trim()) return;
-  
-  forgotError.value = false;
-  const ok = await resetLockWithSecurityAnswer(forgotTargetFolder.value.id, forgotAnswerInput.value.trim());
-  if (ok) {
-    showForgotConfirm.value = false;
-    forgotTargetFolder.value = null;
-    forgotAnswerInput.value = '';
-  } else {
-    forgotError.value = true;
-  }
+async function handleResetComplete(folderId: string) {
+  await unlockFolderPermanently(folderId);
+  showForgotConfirm.value = false;
+  forgotTargetFolder.value = null;
 }
 
 // ── delete ────────────────────────────────────────────────────────
