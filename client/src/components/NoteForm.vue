@@ -453,11 +453,11 @@ defineExpose({ requestClose });
                 />
 
                 <!-- Category + Tag pills badges -->
-                <div class="flex items-center gap-2 select-none mb-8 border-b pb-4 shrink-0" style="border-color: var(--border-subtle);">
-                  <CategoryBadge :category="category === '__custom__' ? customCategoryValue : category" />
+                <div class="flex items-center flex-wrap gap-2 select-none mb-8 border-b pb-4 shrink-0 max-w-full overflow-hidden" style="border-color: var(--border-subtle);">
+                  <CategoryBadge :category="category === '__custom__' ? customCategoryValue : category" class="shrink-0" />
                   
-                  <div v-if="noteTags.length > 0" class="flex items-center gap-1.5">
-                    <TagPill v-for="tag in noteTags" :key="tag" :tag="tag" />
+                  <div v-if="noteTags.length > 0" class="flex items-center flex-wrap gap-1.5 min-w-0 max-w-full">
+                    <TagPill v-for="tag in noteTags" :key="tag" :tag="tag" class="shrink-0" />
                   </div>
                 </div>
 

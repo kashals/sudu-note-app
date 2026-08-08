@@ -238,7 +238,7 @@ function handleTouchEnd() {
   <!-- ── list row layout ── -->
   <div
     v-if="viewMode === 'list'"
-    class="group flex items-center justify-between gap-4 px-4 py-3 border transition-all duration-200 cursor-pointer animate-fade-up select-none"
+    class="group flex items-center justify-between gap-2.5 px-3 py-2.5 border transition-all duration-200 cursor-pointer animate-fade-up select-none min-h-[44px]"
     draggable="true"
     @dragstart="handleDragStart"
     @touchstart.passive="handleTouchStart"
@@ -254,7 +254,7 @@ function handleTouchEnd() {
     @mouseover="($el as HTMLElement).style.borderColor = 'var(--accent)'"
     @mouseleave="($el as HTMLElement).style.borderColor = isSelected ? 'var(--accent)' : 'var(--border)'"
   >
-    <div class="flex items-center gap-3.5 min-w-0 flex-1">
+    <div class="flex items-center gap-2.5 min-w-0 flex-1">
       <!-- Select Checkbox -->
       <button
         v-if="isSelectMode"
@@ -267,7 +267,7 @@ function handleTouchEnd() {
       </button>
 
       <!-- ID & Pin -->
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-1.5 shrink-0">
         <button
           v-if="note.is_archived !== 1 && !isSelectMode"
           type="button"
@@ -284,26 +284,31 @@ function handleTouchEnd() {
             }"
           />
         </button>
-        <span class="font-mono text-[10px] select-none flex items-center gap-1.5" style="color: var(--text-muted);">
+        <span class="font-mono text-[10px] select-none flex items-center gap-1" style="color: var(--text-muted);">
           <span>{{ noteIdFormatted }}</span>
           <Lock v-if="note.is_locked && !isUnlocked" class="h-3.5 w-3.5 text-gray-400 shrink-0" title="Locked note (PIN required)" />
         </span>
       </div>
 
-      <!-- Category -->
-      <CategoryBadge :category="note.category" size="sm" class="hidden sm:inline-block" />
+      <!-- Title -->
+      <h4 class="text-xs sm:text-sm font-semibold truncate shrink max-w-[110px] sm:max-w-[180px]" style="color: var(--text-primary);">
+        {{ note.title || 'Untitled Note' }}
+      </h4>
 
-      <!-- Note Tags -->
-      <div v-if="parsedTags.length > 0" class="hidden md:flex items-center gap-1.5">
-        <TagPill v-for="tag in parsedTags" :key="tag" :tag="tag" size="sm" />
+      <!-- Category Badge (visible on both mobile and desktop) -->
+      <CategoryBadge :category="note.category" size="sm" class="shrink-0 scale-90 sm:scale-100" />
+
+      <!-- Tag Pills (visible on mobile too) -->
+      <div v-if="parsedTags.length > 0" class="flex items-center gap-1 shrink-0">
+        <TagPill v-if="parsedTags[0]" :tag="parsedTags[0]" size="sm" class="scale-90 sm:scale-100" />
+        <span v-if="parsedTags.length > 1" class="font-mono text-[9px] px-1 py-0.2 rounded border" style="background: var(--bg-raised); border-color: var(--border); color: var(--text-muted);">
+          +{{ parsedTags.length - 1 }}
+        </span>
       </div>
 
       <!-- Title & Preview -->
-      <h4 class="text-sm font-semibold truncate max-w-[200px]" style="color: var(--text-primary);">
-        {{ note.title || 'Untitled Note' }}
-      </h4>
       <p
-        class="hidden md:block text-xs truncate flex-1 font-mono"
+        class="hidden lg:block text-xs truncate flex-1 font-mono"
         :class="!plainContent || (note.is_locked && !isUnlocked) ? 'italic opacity-60' : 'opacity-80'"
         style="color: var(--text-secondary);"
       >
@@ -312,10 +317,9 @@ function handleTouchEnd() {
     </div>
 
     <!-- Right meta & actions -->
-    <div class="flex items-center gap-4 shrink-0">
+    <div class="flex items-center gap-2 sm:gap-4 shrink-0">
       <span class="hidden md:block font-mono text-[10px]" style="color: var(--text-muted);">
         <span class="edited-time">{{ formatDate(note.updated_at) }}</span>
-        <span class="created-time">Created: {{ formatDate(note.created_at) }}</span>
       </span>
       
       <div v-if="!isSelectMode" class="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
@@ -367,7 +371,7 @@ function handleTouchEnd() {
             @mouseleave="($el as HTMLElement).style.color = 'var(--text-muted)'"
             @click.stop="emit('archive', note)"
           >
-            <Clock class="h-3.5 w-3.5" />
+            <Archive class="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
