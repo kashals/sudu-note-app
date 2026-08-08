@@ -701,6 +701,38 @@ function dismissConnectionError() { connectionError.value = null; }
 
 // ─── move note to folder (drag-drop and batch) ─────────────────────
 async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | null) {
+  let noteIds: string[] = [];
+  try {
+    if (noteIdOrJson.startsWith('[')) {
+      noteIds = JSON.parse(noteIdOrJson);
+    } else {
+      noteIds = [noteIdOrJson];
+    }
+  } catch {
+    noteIds = [noteIdOrJson];
+  }
+
+  // Check if notes are being moved OUT of a locked source folder
+  const sourceFolderIds = new Set<string>();
+  noteIds.forEach(id => {
+    const note = notes.value.find(n => n.id === id);
+    if (note && note.folder_id) {
+      sourceFolderIds.add(note.folder_id);
+    }
+  });
+
+  const lockedSourceFolder = folders.value.find(f =>
+    sourceFolderIds.has(f.id) && f.is_locked && !unlockedFolderIds.value.has(f.id)
+  );
+
+  if (lockedSourceFolder) {
+    movePinTargetFolder.value = lockedSourceFolder;
+    pendingMovePayload.value = { noteIdOrJson, targetFolderId };
+    isMovePinModalOpen.value = true;
+    return;
+  }
+
+  // Check if notes are being moved INTO a locked target folder
   if (targetFolderId) {
     const targetFolder = folders.value.find(f => f.id === targetFolderId);
     if (targetFolder && targetFolder.is_locked && !unlockedFolderIds.value.has(targetFolder.id)) {
@@ -710,18 +742,23 @@ async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | nul
       return;
     }
   }
+
   await executeMoveNote(noteIdOrJson, targetFolderId);
 }
 
 async function handleVerifyMovePin(pin: string) {
   if (!movePinTargetFolder.value) return;
-  const ok = await verifyPin(movePinTargetFolder.value.id, pin);
+  const verifiedFolder = movePinTargetFolder.value;
+  const ok = await verifyPin(verifiedFolder.id, pin);
   if (ok) {
+    unlockedFolderIds.value = new Set([...unlockedFolderIds.value, verifiedFolder.id]);
     isMovePinModalOpen.value = false;
     const payload = pendingMovePayload.value;
+    movePinTargetFolder.value = null;
     pendingMovePayload.value = null;
+
     if (payload) {
-      await executeMoveNote(payload.noteIdOrJson, payload.targetFolderId);
+      await handleMoveNote(payload.noteIdOrJson, payload.targetFolderId);
     }
   } else {
     movePinModalRef.value?.triggerError();
