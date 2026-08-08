@@ -110,25 +110,17 @@ In accordance with submission requirements, below are 3 concrete examples of how
 ### 1. Component Architecture and State Management
 - Prompt: "Generate a Vue 3 component layout for note cards and folder lists with drag and drop support."
 - AI Output: Generated monolithic components with inline state mutators and unstructured event listeners.
-- Refactoring and Verification: Extracted state logic into composables (`useFolderState`, `useNoteFilter`). Replaced inline drag events with typed emit interfaces and handled event payload normalization in `App.vue` to prevent parameter mismatch bugs during folder moves.
-- Reasoning: Decoupling state logic from UI templates makes code maintainable and prevents silent state desynchronization between components.
+- Refactoring and Verification: Extracted state logic into dedicated composables (`useFolderState`, `useNoteFilter`). Replaced inline drag events with typed emit interfaces and handled event payload normalization in `App.vue` to prevent parameter mismatch bugs during folder moves.
+- Reasoning: Decoupling state logic from UI templates makes the codebase easier to maintain and prevents silent state desynchronization between components.
 
 ### 2. SQLite Schema and Security Verification
 - Prompt: "Write an Express route to insert notes into SQLite database using TypeScript."
 - AI Output: Proposed unparameterized string formatting inside query strings.
-- Refactoring and Verification: Implemented promise-based `sqlite` wrappers with parameterized query bindings across all endpoints (`db.all('SELECT ... WHERE id = ?', [id])`). Enforced foreign key constraints (`PRAGMA foreign_keys = ON;`) during initial schema initialization.
-- Reasoning: Strict parameterization prevents SQL injection attacks and handles special character sanitization automatically.
+- Refactoring and Verification: Implemented promise-based sqlite wrappers with parameterized query bindings across all endpoints (`db.all('SELECT ... WHERE id = ?', [id])`). Enforced foreign key constraints (`PRAGMA foreign_keys = ON;`) during initial schema initialization.
+- Reasoning: Strict parameterization blocks SQL injection vulnerabilities and handles character sanitization at the driver level.
 
 ### 3. Transition Keying and DOM Reconciliation
 - Prompt: "Fix Vue TransitionGroup lingering element issue when filtering arrays."
 - AI Output: Suggested adding arbitrary `setTimeout` delays in component lifecycle hooks.
-- Refactoring and Verification: Rejected arbitrary timers. Defined a reactive computed property (`workspaceKey`) in `NoteList.vue` that combines `viewMode`, `showArchived`, `props.activeFolderId`, and active filter states, binding it directly to `:key` on `<TransitionGroup>`.
-- Reasoning: Binding complete layout context to transition keys allows Vue to perform deterministic Virtual DOM diffing with clean out-in element transitions, preventing ghost element flashes without artificial delays.
-
-## Submission Details
-
-- Email Subject: Full Stack Pre-Task: Aakash Pai
-- Sent To: hr@sudu.ai
-- CC: donghao.lee@aserious.co
-- GitHub Repository: https://github.com/kashals/sudu-note-app
-- Live Deployment: https://sudu-note-app-client.onrender.com (Frontend) / https://sudu-note-app.onrender.com (Backend)
+- Refactoring and Verification: Rejected arbitrary timers. Defined a reactive computed property (`workspaceKey`) in `NoteList.vue` combining `viewMode`, `showArchived`, `props.activeFolderId`, and filter states, binding it directly to `:key` on `<TransitionGroup>`.
+- Reasoning: Binding complete layout context to transition keys lets Vue perform deterministic Virtual DOM diffing with clean element transitions, avoiding ghost elements without artificial delays.
