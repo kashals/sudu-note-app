@@ -19,15 +19,20 @@
           <!-- body -->
           <div class="px-5 py-5 flex flex-col gap-4 text-xs">
             <div class="field">
-              <label class="field-label" for="folder-name-input">Folder Name</label>
+              <div class="flex items-center justify-between">
+                <label class="field-label" for="folder-name-input">Folder Name</label>
+                <span class="text-[10px] font-mono" :style="{ color: localName.length >= 30 ? 'var(--accent-danger, #ef4444)' : 'var(--text-muted)' }">
+                  {{ localName.length }}/30
+                </span>
+              </div>
               <input
                 id="folder-name-input"
                 ref="nameInput"
-                v-model.trim="localName"
+                v-model="localName"
                 type="text"
                 class="field-input"
                 placeholder="e.g. Work, Ideas, Personal..."
-                maxlength="50"
+                maxlength="30"
                 @keydown.enter="submit"
                 @keydown.escape="$emit('update:modelValue', false)"
               />
@@ -39,6 +44,7 @@
                 <button
                   v-for="color in FOLDER_COLORS"
                   :key="color.value"
+                  type="button"
                   class="color-swatch"
                   :class="{ active: localColor === color.value }"
                   :style="{ background: color.value }"
@@ -55,7 +61,7 @@
             <!-- Preview -->
             <div class="folder-preview">
               <Folder class="h-4 w-4 shrink-0" :style="{ color: localColor, fill: localColor + '1a' }" />
-              <span class="preview-name">{{ localName || 'Folder Name' }}</span>
+              <span class="preview-name">{{ localName.trim() || 'Folder Name' }}</span>
             </div>
           </div>
 
@@ -128,8 +134,9 @@ watch(() => props.modelValue, async (open) => {
 });
 
 function submit() {
-  if (!localName.value) return;
-  emit('submit', { name: localName.value, color: localColor.value });
+  const trimmed = localName.value.trim();
+  if (!trimmed) return;
+  emit('submit', { name: trimmed.slice(0, 30), color: localColor.value });
   emit('update:modelValue', false);
 }
 </script>
@@ -248,6 +255,8 @@ function submit() {
   background: var(--bg-raised);
   border-radius: 10px;
   border: 1px dashed var(--border);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .preview-dot {
@@ -262,6 +271,11 @@ function submit() {
   font-size: 0.875rem;
   color: var(--text-secondary);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
 }
 
 

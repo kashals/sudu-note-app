@@ -50,14 +50,14 @@ const updateNoteSchema = z.object({
 });
 
 const createFolderSchema = z.object({
-  name: z.string().min(1, 'name required').max(50, 'name too long (max 50 characters)').trim(),
+  name: z.string().min(1, 'name required').max(30, 'name too long (max 30 characters)').trim(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'invalid color hex').default('#3b82f6'),
   is_locked: z.number().int().min(0).max(1).default(0),
   pin_hash: z.string().nullable().optional()
 });
 
 const updateFolderSchema = z.object({
-  name: z.string().min(1).max(50).trim().optional(),
+  name: z.string().min(1).max(30, 'name too long (max 30 characters)').trim().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   is_locked: z.number().int().min(0).max(1).optional(),
   pin_hash: z.string().nullable().optional()

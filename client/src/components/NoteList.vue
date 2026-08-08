@@ -840,8 +840,8 @@ function staggerClass(index: number): string {
                 @click="moveSelectedNotes(folder.id)"
               >
                 <Folder class="h-4 w-4 shrink-0" :style="{ color: folder.color, fill: folder.color + '1a' }" />
-                <div class="flex-1">
-                  <p class="font-semibold">{{ folder.name }}</p>
+                <div class="flex-1 min-w-0">
+                  <p class="font-semibold truncate">{{ folder.name }}</p>
                   <p v-if="folder.is_locked" class="text-[10px] opacity-50" style="color: var(--text-muted);">Locked folder</p>
                 </div>
               </button>
