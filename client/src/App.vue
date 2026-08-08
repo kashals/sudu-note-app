@@ -316,42 +316,21 @@ async function handleFormSubmit(payload: CreateNoteDto) {
     }
 
   } else {
-    // ── optimistic create ──
-    const tempId = `temp_${Date.now()}`;
-    const tempNote: Note = {
-      id: tempId,
-      title: payload.title,
-      content: payload.content,
-      category: payload.category ?? 'Personal',
-      is_pinned: payload.is_pinned ?? 0,
-      is_archived: payload.is_archived ?? 0,
-      tags: payload.tags ?? '[]',
-      folder_id: activeFolderId.value,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    notes.value = [tempNote, ...notes.value];
-    sortNotes();
-    isFormOpen.value = false;
-
+    // ── create note (direct resolution to prevent key-swapping DOM flashes) ──
     try {
       const created = await createNote({
         ...payload,
         folder_id: activeFolderId.value
       });
-      // Replace temp note cleanly and eliminate duplicate items during network latency
-      const cleanNotes = notes.value.filter((n) => n.id !== tempId && n.id !== created.id);
-      notes.value = [created, ...cleanNotes];
-      // update sidebar count
+      notes.value = [created, ...notes.value.filter((n) => n.id !== created.id)];
       if (activeFolderId.value) updateFolderNoteCount(activeFolderId.value, 1);
       sortNotes();
       showToast('Note created');
+      isFormOpen.value = false;
       agentIdle();
     } catch (err: any) {
-      // revert
-      notes.value = notes.value.filter((n) => n.id !== tempId);
-      sortNotes();
-      showToast('Reverting...', 'error');
+      formError.value = err.message || 'Failed to create note';
+      showToast('Failed to create note', 'error');
       agentIdle(0);
     }
   }

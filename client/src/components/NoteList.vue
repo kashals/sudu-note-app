@@ -613,7 +613,7 @@ function staggerClass(index: number): string {
 
         <Transition name="fade-layout" mode="out-in">
           <TransitionGroup
-            :key="viewMode"
+            :key="viewMode + '_' + (showArchived ? 'archive' : 'active') + '_' + (activeFolderId ?? 'all')"
             tag="div"
             :class="viewMode === 'grid' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-2'"
             name="note-card-stack"
@@ -654,7 +654,7 @@ function staggerClass(index: number): string {
 
         <Transition name="fade-layout" mode="out-in">
           <TransitionGroup
-            :key="viewMode"
+            :key="viewMode + '_' + (showArchived ? 'archive' : 'active') + '_' + (activeFolderId ?? 'all')"
             tag="div"
             :class="viewMode === 'grid' ? 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-2'"
             name="note-card-stack"
