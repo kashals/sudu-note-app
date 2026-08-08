@@ -77,7 +77,7 @@ export function useEditor(
       document.execCommand(command, false, value || undefined);
     }
     if (editorRef.value) {
-      editorRef.value.focus();
+      editorRef.value.focus({ preventScroll: true });
       content.value = editorRef.value.innerHTML;
       updateActiveFormats();
     }
@@ -87,7 +87,7 @@ export function useEditor(
 
   function insertCheckbox() {
     if (!editorRef.value) return;
-    editorRef.value.focus();
+    editorRef.value.focus({ preventScroll: true });
 
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;

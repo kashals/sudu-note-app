@@ -476,6 +476,6 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // start server
-app.listen(PORT, () => {
-  console.log(`server running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`server running on http://0.0.0.0:${PORT}`);
 });

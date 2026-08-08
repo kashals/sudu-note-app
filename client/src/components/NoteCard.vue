@@ -44,7 +44,18 @@ const parsedTags = computed<string[]>(() => {
 
 const plainContent = computed(() => stripHtml(props.note.content));
 
+const isTouchDevice = computed(() => {
+  if (typeof window === 'undefined') return false;
+  return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+});
+
+let isLongPressing = false;
+
 function handleCardClick() {
+  if (isLongPressing) {
+    isLongPressing = false;
+    return;
+  }
   if (props.isSelectMode) {
     emit('toggle-select', props.note.id);
   } else {
@@ -156,18 +167,20 @@ function handleDragStart(e: DragEvent) {
   let count = 1;
   let titles = [props.note.title];
 
-  if (props.isSelectMode && props.isSelected && props.selectedNoteIds && props.selectedNoteIds.length > 0) {
-    count = props.selectedNoteIds.length;
-    
-    // Map titles from selectedNotes
+  if (props.isSelectMode) {
+    let currentSelected = props.selectedNoteIds ? [...props.selectedNoteIds] : [];
+    if (!currentSelected.includes(props.note.id)) {
+      currentSelected.push(props.note.id);
+      emit('toggle-select', props.note.id);
+    }
+    count = Math.max(1, currentSelected.length);
     if (props.selectedNotes) {
       const other = props.selectedNotes
         .filter(n => n.id !== props.note.id)
         .map(n => n.title);
       titles = [props.note.title, ...other];
     }
-    
-    e.dataTransfer?.setData('text/plain', JSON.stringify(props.selectedNoteIds));
+    e.dataTransfer?.setData('text/plain', JSON.stringify(currentSelected));
   } else {
     e.dataTransfer?.setData('text/plain', props.note.id);
   }
@@ -179,6 +192,45 @@ function handleDragStart(e: DragEvent) {
     e.dataTransfer.setDragImage(dragImg, 20, 20);
   }
 }
+
+// ─── mobile long press touch selection gesture ───
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let touchStartX = 0;
+let touchStartY = 0;
+
+function handleTouchStart(e: TouchEvent) {
+  isLongPressing = false;
+  if (props.isSelectMode) return;
+  const touch = e.touches[0];
+  if (!touch) return;
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+
+  longPressTimer = setTimeout(() => {
+    isLongPressing = true;
+    emit('toggle-select', props.note.id);
+    if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(40);
+    }
+  }, 450);
+}
+
+function handleTouchMove(e: TouchEvent) {
+  if (!longPressTimer) return;
+  const touch = e.touches[0];
+  if (!touch) return;
+  if (Math.abs(touch.clientX - touchStartX) > 10 || Math.abs(touch.clientY - touchStartY) > 10) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+function handleTouchEnd() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
 </script>
 
 <template>
@@ -188,6 +240,10 @@ function handleDragStart(e: DragEvent) {
     class="group flex items-center justify-between gap-4 px-4 py-3 border transition-all duration-200 cursor-pointer animate-fade-up select-none"
     draggable="true"
     @dragstart="handleDragStart"
+    @touchstart.passive="handleTouchStart"
+    @touchmove.passive="handleTouchMove"
+    @touchend="handleTouchEnd"
+    @touchcancel="handleTouchEnd"
     :style="{
       background: isSelected ? 'var(--accent-glow)' : 'var(--bg-surface)',
       borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
@@ -260,7 +316,7 @@ function handleDragStart(e: DragEvent) {
         <span class="created-time">Created: {{ formatDate(note.created_at) }}</span>
       </span>
       
-      <div v-if="!isSelectMode" class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+      <div v-if="!isSelectMode" class="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
         <!-- archived note actions -->
         <template v-if="note.is_archived === 1">
           <button
@@ -333,6 +389,10 @@ function handleDragStart(e: DragEvent) {
     class="note-card group relative flex flex-col justify-between p-5 border transition-all duration-300 cursor-pointer overflow-hidden animate-scale-in select-none"
     draggable="true"
     @dragstart="handleDragStart"
+    @touchstart.passive="handleTouchStart"
+    @touchmove.passive="handleTouchMove"
+    @touchend="handleTouchEnd"
+    @touchcancel="handleTouchEnd"
     :style="{
       background: isSelected ? 'var(--accent-glow)' : 'var(--bg-surface)',
       borderColor: isSelected ? 'var(--accent)' : 'var(--border)',
@@ -415,7 +475,7 @@ function handleDragStart(e: DragEvent) {
       </div>
 
       <!-- action buttons -->
-      <div v-if="!isSelectMode" class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+      <div v-if="!isSelectMode" class="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200">
         <!-- archived note actions -->
         <template v-if="note.is_archived === 1">
           <button

@@ -2,7 +2,9 @@ import axios, { AxiosError } from 'axios';
 import type { Note, CreateNoteDto, UpdateNoteDto, ApiError } from '../types/note';
 import type { Folder, CreateFolderDto, UpdateFolderDto } from '../types/folder';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (
+  typeof window !== 'undefined' ? '/api' : 'http://localhost:5000/api'
+);
 
 // axios instance setup
 const apiClient = axios.create({

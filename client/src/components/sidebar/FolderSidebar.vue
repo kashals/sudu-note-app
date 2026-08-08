@@ -1,20 +1,41 @@
 <template>
-  <aside class="folder-sidebar">
+  <!-- Mobile Backdrop Overlay -->
+  <Transition name="fade-backdrop">
+    <div
+      v-if="isMobileOpen"
+      class="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-xs"
+      @click="emit('update:isMobileOpen', false)"
+    />
+  </Transition>
+
+  <aside class="folder-sidebar" :class="{ 'mobile-open': isMobileOpen }">
     <!-- Header -->
     <div class="sidebar-header">
-      <span class="sidebar-title">Folders</span>
-      <button class="new-folder-btn icon-only" @click="openCreateModal" title="New folder" aria-label="New folder">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-      </button>
+      <span class="sidebar-title">Workspace</span>
+      <div class="flex items-center gap-1">
+        <button class="new-folder-btn icon-only" @click="openCreateModal" title="New folder" aria-label="New folder">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+        <button
+          v-if="isMobileOpen"
+          type="button"
+          class="md:hidden p-1 text-muted hover:text-primary transition-colors cursor-pointer"
+          style="color: var(--text-muted);"
+          title="Close Sidebar"
+          @click="emit('update:isMobileOpen', false)"
+        >
+          <X class="h-4 w-4" />
+        </button>
+      </div>
     </div>
 
     <!-- All Notes entry -->
     <div
       class="all-notes-item"
-      :class="{ active: activeFolderId === null }"
-      @click="setActiveFolderId(null)"
+      :class="{ active: activeFolderId === null && !showArchived }"
+      @click="selectAllNotes"
       @dragover.prevent="allNotesDragOver = true"
       @dragleave="allNotesDragOver = false"
       @drop.prevent="handleDropToAllNotes"
@@ -28,6 +49,19 @@
       </div>
       <span class="all-notes-label">All Notes</span>
       <span class="folder-count">{{ totalNoteCount }}</span>
+    </div>
+
+    <!-- Archive entry -->
+    <div
+      class="all-notes-item mt-1"
+      :class="{ active: showArchived }"
+      @click="selectArchive"
+    >
+      <div class="all-notes-icon">
+        <Archive class="w-3.5 h-3.5" style="color: #fb923c;" />
+      </div>
+      <span class="all-notes-label">Archive</span>
+      <span class="folder-count">{{ archivedCount }}</span>
     </div>
 
     <!-- Divider -->
@@ -169,7 +203,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { AlertTriangle, X } from '@lucide/vue';
+import { AlertTriangle, X, Archive } from '@lucide/vue';
 import type { Folder } from '../../types/folder';
 import { useFolderState } from '../../composables/useFolderState';
 import FolderItem from './FolderItem.vue';
@@ -181,10 +215,14 @@ import SecurityQuestionModal from '../ui/SecurityQuestionModal.vue';
 
 const props = defineProps<{
   notes: { folder_id: string | null; is_archived: number }[];
+  isMobileOpen?: boolean;
+  showArchived?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'move-note', noteId: string, folderId: string | null): void;
+  (e: 'update:isMobileOpen', val: boolean): void;
+  (e: 'update:showArchived', val: boolean): void;
 }>();
 
 const {
@@ -225,8 +263,26 @@ const deletingFolder = ref<Folder | null>(null);
 
 const allNotesDragOver = ref(false);
 
+const archivedCount = computed(() => {
+  return props.notes.filter(n => n.is_archived === 1).length;
+});
+
 // ── folder selection ──────────────────────────────────────────────
+function selectAllNotes() {
+  setActiveFolderId(null);
+  emit('update:showArchived', false);
+  if (props.isMobileOpen) emit('update:isMobileOpen', false);
+}
+
+function selectArchive() {
+  setActiveFolderId(null);
+  emit('update:showArchived', true);
+  if (props.isMobileOpen) emit('update:isMobileOpen', false);
+}
+
 function handleFolderSelect(folder: Folder) {
+  emit('update:showArchived', false);
+  if (props.isMobileOpen) emit('update:isMobileOpen', false);
   if (folder.is_locked && !unlockedFolderIds.value.has(folder.id)) {
     // needs PIN
     pinTargetFolder.value = folder;
@@ -427,6 +483,25 @@ function handleDropToAllNotes(e: DragEvent) {
   overflow: hidden;
   flex-shrink: 0;
 }
+
+@media (max-width: 767px) {
+  .folder-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    box-shadow: 0 0 32px rgba(0,0,0,0.5);
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .folder-sidebar.mobile-open {
+    transform: translateX(0);
+  }
+}
+
+.fade-backdrop-enter-active, .fade-backdrop-leave-active { transition: opacity 0.2s ease; }
+.fade-backdrop-enter-from, .fade-backdrop-leave-to { opacity: 0; }
 
 .sidebar-header {
   display: flex;

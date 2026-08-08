@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HelpCircle } from '@lucide/vue';
+import { HelpCircle, X } from '@lucide/vue';
 import CategorySelect from './CategorySelect.vue';
 import TagManager from './TagManager.vue';
 
@@ -25,21 +25,42 @@ const emit = defineEmits<{
   (e: 'toggle-pin'): void;
   (e: 'toggle-autosave'): void;
   (e: 'open-shortcuts'): void;
+  (e: 'close'): void;
 }>();
 </script>
 
 <template>
+  <!-- Mobile Backdrop Overlay -->
+  <Transition name="fade-backdrop">
+    <div
+      v-if="showSidebar"
+      class="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-xs"
+      @click="emit('close')"
+    />
+  </Transition>
+
   <Transition name="sidebar-slide">
     <aside
       v-if="showSidebar"
-      class="w-80 border-r flex flex-col overflow-y-auto shrink-0 shadow-lg z-10 relative"
+      class="max-md:fixed max-md:top-0 max-md:bottom-0 max-md:left-0 max-md:z-50 max-md:w-80 max-md:shadow-2xl md:relative md:w-80 md:border-r flex flex-col overflow-y-auto shrink-0 md:shadow-lg md:z-10"
       style="background: var(--bg-surface); border-color: var(--border);"
     >
       <div class="p-6 space-y-6">
-        <h3 class="text-xs font-semibold tracking-wide uppercase font-mono mb-4 flex items-center gap-2 select-none" style="color: var(--text-primary);">
-          <div class="w-1.5 h-4" style="background: var(--accent);"></div>
-          Note Properties
-        </h3>
+        <div class="flex items-center justify-between border-b pb-3 mb-2" style="border-color: var(--border-subtle);">
+          <h3 class="text-xs font-semibold tracking-wide uppercase font-mono flex items-center gap-2 select-none" style="color: var(--text-primary);">
+            <div class="w-1.5 h-4" style="background: var(--accent);"></div>
+            Note Properties
+          </h3>
+          <button
+            type="button"
+            class="md:hidden p-1 text-muted hover:text-primary transition-colors cursor-pointer"
+            style="color: var(--text-muted);"
+            title="Close Properties"
+            @click="emit('close')"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
 
         <!-- Category Selector -->
         <CategorySelect
@@ -145,5 +166,37 @@ const emit = defineEmits<{
 }
 .autosave-toggle--on .autosave-thumb {
   transform: translateX(16px);
+}
+
+/* ─── Sidebar Slide Transition ─── */
+.sidebar-slide-enter-active,
+.sidebar-slide-leave-active {
+  transition: all 0.28s cubic-bezier(0.19, 1, 0.22, 1);
+  overflow: hidden;
+}
+
+.sidebar-slide-enter-from,
+.sidebar-slide-leave-to {
+  max-width: 0 !important;
+  opacity: 0;
+  transform: translateX(-100%);
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.sidebar-slide-enter-to,
+.sidebar-slide-leave-from {
+  max-width: 20rem;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.fade-backdrop-enter-active,
+.fade-backdrop-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-backdrop-enter-from,
+.fade-backdrop-leave-to {
+  opacity: 0;
 }
 </style>

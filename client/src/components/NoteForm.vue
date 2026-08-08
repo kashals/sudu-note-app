@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick, toRef } from 'vue';
-import { Menu, Check, HelpCircle } from '@lucide/vue';
+import { Menu, Check, HelpCircle, X } from '@lucide/vue';
 import type { Note, CreateNoteDto } from '../types/note';
 import PushButton from './PushButton.vue';
 import CategoryBadge from './ui/CategoryBadge.vue';
@@ -329,12 +329,12 @@ defineExpose({ requestClose });
       <div class="fixed inset-0 w-screen h-screen flex flex-col z-50 animate-scale-in" style="background: var(--bg-base);">
         
         <!-- Sticky Minimalist Header -->
-        <header class="flex items-center justify-between border-b px-6 py-3.5 shrink-0" style="background: var(--bg-surface); border-color: var(--border);">
-          <div class="flex items-center gap-3">
+        <header class="flex items-center justify-between border-b px-3 sm:px-6 py-3.5 shrink-0" style="background: var(--bg-surface); border-color: var(--border);">
+          <div class="flex items-center gap-2 sm:gap-3 min-w-0">
             <!-- Sidebar Toggle Menu Button -->
             <button
               type="button"
-              class="p-1.5 border transition-colors rounded"
+              class="p-1.5 border transition-colors rounded shrink-0"
               :style="showSidebar ? 'background: var(--accent-glow); border-color: var(--accent); color: var(--accent);' : 'background: var(--bg-surface); border-color: var(--border); color: var(--text-secondary);'"
               title="Toggle Menu"
               @click="showSidebar = !showSidebar"
@@ -343,22 +343,22 @@ defineExpose({ requestClose });
             </button>
             
             <!-- Clickable Breadcrumbs -->
-            <div class="flex items-center gap-2 text-xs font-mono select-none" style="color: var(--text-muted);">
+            <div class="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-mono select-none min-w-0" style="color: var(--text-muted);">
               <button
                 type="button"
-                class="hover:underline transition-colors cursor-pointer"
+                class="hover:underline transition-colors cursor-pointer shrink-0"
                 style="color: var(--text-muted);"
                 title="Return to Workspace"
                 @click="requestClose()"
               >
-                SuDu workspace
+                SuDu
               </button>
               
               <template v-if="folderName">
                 <span>/</span>
                 <button
                   type="button"
-                  class="hover:underline transition-colors cursor-pointer"
+                  class="hover:underline transition-colors cursor-pointer truncate max-w-[70px] sm:max-w-[120px]"
                   style="color: var(--accent-light);"
                   :title="`Return from ${folderName}`"
                   @click="requestClose()"
@@ -368,18 +368,31 @@ defineExpose({ requestClose });
               </template>
 
               <span>/</span>
-              <span class="truncate max-w-[200px]" style="color: var(--text-secondary);">{{ title || 'Untitled Note' }}</span>
+              <span class="truncate max-w-[90px] sm:max-w-[200px]" style="color: var(--text-secondary);">{{ title || 'Untitled Note' }}</span>
             </div>
           </div>
           
-          <div class="flex items-center gap-3">
-            <PushButton variant="secondary" @click="requestClose">
-              Cancel
-            </PushButton>
-            <PushButton variant="primary" :disabled="!isValid" @click="handleSubmit">
-              <Check class="w-3.5 h-3.5" />
-              Save &amp; Close
-            </PushButton>
+          <div class="flex items-center gap-1.5 sm:gap-3">
+            <!-- Mobile Header Buttons -->
+            <div class="flex items-center gap-1.5 sm:hidden">
+              <PushButton variant="secondary" class="!px-2.5" title="Cancel" @click="requestClose">
+                <X class="w-4 h-4" />
+              </PushButton>
+              <PushButton variant="primary" class="!px-2.5" :disabled="!isValid" title="Save & Close" @click="handleSubmit">
+                <Check class="w-4 h-4" />
+              </PushButton>
+            </div>
+
+            <!-- Desktop Header Buttons -->
+            <div class="hidden sm:flex items-center gap-3">
+              <PushButton variant="secondary" @click="requestClose">
+                Cancel
+              </PushButton>
+              <PushButton variant="primary" :disabled="!isValid" @click="handleSubmit">
+                <Check class="w-3.5 h-3.5" />
+                <span>Save &amp; Close</span>
+              </PushButton>
+            </div>
           </div>
         </header>
 
@@ -406,6 +419,7 @@ defineExpose({ requestClose });
             @toggle-pin="isPinned = !isPinned; markDirty(); triggerAutoSave(getFormData);"
             @toggle-autosave="toggleAutoSave"
             @open-shortcuts="isShortcutsModalOpen = true"
+            @close="showSidebar = false"
           />
 
           <!-- Main Editor Column -->
@@ -419,17 +433,17 @@ defineExpose({ requestClose });
             />
 
             <!-- Page Canvas Workspace -->
-            <div class="flex-1 overflow-y-auto px-6 py-8 md:py-12" style="background: var(--bg-base);">
+            <div class="flex-1 overflow-y-auto px-2 sm:px-6 py-4 sm:py-8 md:py-12 max-w-full overflow-x-hidden" style="background: var(--bg-base);">
               <div 
-                class="max-w-4xl mx-auto flex flex-col min-h-[850px] shadow-md border rounded" 
-                style="background: var(--bg-surface); border-color: var(--border-subtle); padding: 4rem 5rem;"
+                class="w-full max-w-4xl mx-auto flex flex-col min-h-[600px] sm:min-h-[850px] shadow-md border rounded p-4 sm:p-12 md:p-[4rem_5rem] break-words overflow-wrap-anywhere word-break-break-word min-w-0" 
+                style="background: var(--bg-surface); border-color: var(--border-subtle);"
               >
                 <!-- Title input field -->
                 <input
                   v-model="title"
                   type="text"
                   placeholder="Untitled Note"
-                  class="w-full bg-transparent border-none text-4xl font-extrabold focus:outline-none tracking-tight mb-4 shrink-0"
+                  class="w-full bg-transparent border-none text-2xl sm:text-4xl font-extrabold focus:outline-none tracking-tight mb-4 shrink-0 break-words overflow-wrap-anywhere"
                   style="color: var(--text-primary);"
                   @blur="touchedTitle = true"
                   @input="markDirty(); triggerAutoSave(getFormData);"
@@ -449,7 +463,7 @@ defineExpose({ requestClose });
                   ref="editorRef"
                   contenteditable="true"
                   placeholder="Start typing your thoughts distraction-free..."
-                  class="editor-sheet flex-1 focus:outline-none leading-relaxed text-base w-full"
+                  class="editor-sheet flex-1 focus:outline-none leading-relaxed text-sm sm:text-base w-full max-w-full min-w-0 break-words overflow-wrap-anywhere word-break-break-word"
                   style="color: var(--text-primary);"
                   @input="handleEditorInput"
                   @keydown="handleEditorKeydown"
@@ -583,6 +597,11 @@ defineExpose({ requestClose });
   outline: none;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+.editor-sheet {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .editor-sheet:empty:before {

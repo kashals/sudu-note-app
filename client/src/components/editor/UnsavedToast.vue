@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { AlertTriangle } from '@lucide/vue';
+
 defineProps<{
   show: boolean;
   isValid: boolean;
@@ -14,18 +16,15 @@ const emit = defineEmits<{
 <template>
   <Transition name="warn-toast">
     <div v-if="show" class="unsaved-toast">
-      <div class="flex items-center gap-2" style="color: #fbbf24;">
-        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/>
-          <line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-        <span class="font-mono text-xs" style="color: var(--text-primary);">Unsaved changes</span>
+      <div class="flex items-center justify-center gap-2 py-0.5 select-none text-center">
+        <AlertTriangle class="w-4 h-4 shrink-0 text-amber-400 stroke-[2.5]" />
+        <span class="font-mono text-xs font-semibold tracking-tight" style="color: var(--text-primary);">Unsaved changes</span>
       </div>
-      <div class="flex items-center gap-2">
+      
+      <div class="flex items-center justify-center gap-2 w-full pt-0.5">
         <button
           type="button"
-          class="unsaved-toast-btn"
+          class="unsaved-toast-btn flex-1 sm:flex-initial"
           style="color: var(--text-secondary);"
           @click="emit('keep-editing')"
         >
@@ -33,7 +32,7 @@ const emit = defineEmits<{
         </button>
         <button
           type="button"
-          class="unsaved-toast-btn"
+          class="unsaved-toast-btn flex-1 sm:flex-initial"
           style="color: #f87171; border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.07);"
           @click="emit('discard')"
         >
@@ -41,7 +40,7 @@ const emit = defineEmits<{
         </button>
         <button
           type="button"
-          class="unsaved-toast-btn"
+          class="unsaved-toast-btn flex-1 sm:flex-initial"
           style="color: var(--accent-light); border-color: var(--accent); background: var(--accent-glow);"
           :disabled="!isValid"
           @click="emit('save-and-close')"
@@ -56,31 +55,47 @@ const emit = defineEmits<{
 <style scoped>
 .unsaved-toast {
   position: fixed;
-  bottom: 60px;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 70;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 12px 20px;
-  border-radius: 12px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  background: var(--bg-raised);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(245,158,11,0.1);
+  justify-content: center;
+  gap: 10px;
+  width: min(calc(100vw - 32px), 420px);
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--bg-surface);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(245,158,11,0.15);
   pointer-events: all;
   user-select: none;
-  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .unsaved-toast {
+    bottom: 48px;
+    flex-direction: row;
+    width: auto;
+    max-width: none;
+    padding: 10px 20px;
+    gap: 16px;
+    border-radius: 9999px;
+  }
 }
 
 .unsaved-toast-btn {
-  padding: 5px 12px;
-  font-size: 10px;
+  padding: 6px 12px;
+  font-size: 11px;
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   cursor: pointer;
+  white-space: nowrap;
+  text-align: center;
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 

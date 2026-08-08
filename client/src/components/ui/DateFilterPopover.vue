@@ -30,7 +30,7 @@ const emit = defineEmits<{
   >
     <div
       v-if="isOpen"
-      class="absolute top-full left-0 sm:left-auto mt-2 w-72 p-4 border rounded-xl shadow-2xl z-50 font-mono text-xs space-y-4 select-none"
+      class="absolute top-full right-0 mt-2 w-72 max-w-[calc(100vw-32px)] p-4 border rounded-xl shadow-2xl z-50 font-mono text-xs space-y-4 select-none"
       style="background: var(--bg-surface); border-color: var(--border); box-shadow: 0 16px 48px rgba(0,0,0,0.35);"
     >
       <!-- Header -->

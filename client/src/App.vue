@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { FileText, AlertCircle, CheckCircle2, X, Sun, Moon, Keyboard, Loader2, Check, RefreshCw } from '@lucide/vue';
+import { FileText, AlertCircle, CheckCircle2, X, Sun, Moon, Keyboard, Loader2, Check, RefreshCw, Menu } from '@lucide/vue';
 import type { Note, CreateNoteDto } from './types/note';
 import { getNotes, createNote, updateNote, deleteNote } from './services/api';
 import NoteList from './components/NoteList.vue';
@@ -10,6 +10,8 @@ import FolderSidebar from './components/sidebar/FolderSidebar.vue';
 import { useToast } from './composables/useToast';
 import { useTheme } from './composables/useTheme';
 import { useFolderState } from './composables/useFolderState';
+import PinModal from './components/ui/PinModal.vue';
+import type { Folder } from './types/folder';
 
 // ─── note state ──────────────────────────────────────────────
 const notes = ref<Note[]>([]);
@@ -50,6 +52,10 @@ const archiveModalMessage = computed(() => {
   return `Are you sure you want to archive '${noteToArchive.value?.title || 'Untitled Note'}'? You can view, restore, or delete it forever from the Archive view.`;
 });
 
+// ─── navigation state ─────────────────────────────────────────
+const isMobileSidebarOpen = ref(false);
+const showArchived = ref(false);
+
 // ─── feedback & theme composables ────────────────────────────
 const connectionError = ref<string | null>(null);
 const formError = ref<string | null>(null);
@@ -58,11 +64,20 @@ const { isDark, toggleTheme, initTheme } = useTheme();
 
 // ─── folder state ─────────────────────────────────────────────
 const {
+  folders,
   activeFolderId,
   activeFolder,
+  isLoading: isFolderLoading,
+  unlockedFolderIds,
   loadFolders,
-  updateFolderNoteCount
+  updateFolderNoteCount,
+  verifyPin
 } = useFolderState();
+
+// ─── locked folder move state ──────────────────────────────────
+const isMovePinModalOpen = ref(false);
+const movePinTargetFolder = ref<Folder | null>(null);
+const pendingMovePayload = ref<{ noteIdOrJson: string; targetFolderId: string | null } | null>(null);
 
 // ─── refresh state ────────────────────────────────────────────
 const refreshState = ref<'idle' | 'loading' | 'success'>('idle');
@@ -673,6 +688,34 @@ function dismissConnectionError() { connectionError.value = null; }
 
 // ─── move note to folder (drag-drop and batch) ─────────────────────
 async function handleMoveNote(noteIdOrJson: string, targetFolderId: string | null) {
+  if (targetFolderId) {
+    const targetFolder = folders.value.find(f => f.id === targetFolderId);
+    if (targetFolder && targetFolder.is_locked && !unlockedFolderIds.value.has(targetFolder.id)) {
+      movePinTargetFolder.value = targetFolder;
+      pendingMovePayload.value = { noteIdOrJson, targetFolderId };
+      isMovePinModalOpen.value = true;
+      return;
+    }
+  }
+  await executeMoveNote(noteIdOrJson, targetFolderId);
+}
+
+async function handleVerifyMovePin(pin: string) {
+  if (!movePinTargetFolder.value) return;
+  const ok = await verifyPin(movePinTargetFolder.value.id, pin);
+  if (ok) {
+    isMovePinModalOpen.value = false;
+    const payload = pendingMovePayload.value;
+    pendingMovePayload.value = null;
+    if (payload) {
+      await executeMoveNote(payload.noteIdOrJson, payload.targetFolderId);
+    }
+  } else {
+    showToast('Incorrect PIN', 'error');
+  }
+}
+
+async function executeMoveNote(noteIdOrJson: string, targetFolderId: string | null) {
   let noteIds: string[] = [];
   try {
     if (noteIdOrJson.startsWith('[')) {
@@ -809,11 +852,21 @@ onUnmounted(() => {
         backdropFilter: 'blur(12px)',
       }"
     >
-      <div class="px-6 h-14 flex items-center justify-between w-full">
-        <!-- logo -->
-        <div class="flex items-center gap-3">
+      <div class="px-3 sm:px-6 h-14 flex items-center justify-between w-full">
+        <!-- logo & mobile menu toggle -->
+        <div class="flex items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            class="md:hidden p-1.5 border rounded-md transition-colors cursor-pointer"
+            style="background: var(--bg-raised); border-color: var(--border); color: var(--text-secondary);"
+            title="Toggle Folders Sidebar"
+            @click="isMobileSidebarOpen = !isMobileSidebarOpen"
+          >
+            <Menu class="h-4 w-4" />
+          </button>
+
           <div
-            class="p-1.5 border"
+            class="p-1.5 border shrink-0"
             style="background: var(--accent-glow); border-color: var(--accent); border-radius: 6px;"
           >
             <FileText class="h-4 w-4" style="color: var(--accent);" />
@@ -822,7 +875,7 @@ onUnmounted(() => {
             <h1 class="text-xs font-bold tracking-widest uppercase" style="color: var(--text-primary);">
               SuDuVault
             </h1>
-            <p class="font-mono text-[10px] mt-0.5" style="color: var(--text-muted);">
+            <p class="font-mono text-[10px] mt-0.5 hidden sm:block" style="color: var(--text-muted);">
               file management system
             </p>
           </div>
@@ -872,13 +925,16 @@ onUnmounted(() => {
       <!-- Folder sidebar -->
       <FolderSidebar
         :notes="notes"
+        v-model:is-mobile-open="isMobileSidebarOpen"
+        v-model:show-archived="showArchived"
         @move-note="handleMoveNote"
       />
       <!-- Note list area -->
-      <div class="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-7 flex flex-col">
+      <div class="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-7 pb-20 sm:pb-7 flex flex-col">
         <NoteList
           :notes="notes"
           :is-loading="isLoading"
+          v-model:show-archived="showArchived"
           :active-folder-id="activeFolderId"
           :active-folder-name="activeFolder?.name ?? null"
           @create="openCreateModal"
@@ -1020,5 +1076,13 @@ onUnmounted(() => {
         </button>
       </div>
     </Transition>
+    <!-- Pin verification modal for moving to locked folders -->
+    <PinModal
+      v-model="isMovePinModalOpen"
+      mode="verify"
+      :folder-name="movePinTargetFolder?.name || ''"
+      @submit="handleVerifyMovePin"
+      @cancel="isMovePinModalOpen = false; pendingMovePayload = null;"
+    />
   </div>
 </template>

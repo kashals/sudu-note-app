@@ -50,7 +50,7 @@ const TAG_COLORS: Record<string, { bg: string; border: string; text: string }> =
   >
     <div
       v-if="isOpen"
-      class="absolute top-full left-0 sm:right-0 sm:left-auto mt-2 w-80 p-4 border rounded-xl shadow-2xl z-50 font-mono text-xs space-y-4 select-none"
+      class="absolute top-full right-0 mt-2 w-80 max-w-[calc(100vw-32px)] p-4 border rounded-xl shadow-2xl z-50 font-mono text-xs space-y-4 select-none"
       style="background: var(--bg-surface); border-color: var(--border); box-shadow: 0 16px 48px rgba(0,0,0,0.35);"
     >
       <!-- Header -->

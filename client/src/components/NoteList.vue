@@ -17,6 +17,7 @@ const props = defineProps<{
   isLoading?: boolean;
   activeFolderId?: string | null;
   activeFolderName?: string | null;
+  showArchived?: boolean;
 }>();
 
 // component emits
@@ -32,6 +33,7 @@ const emit = defineEmits<{
   (e: 'batch-delete', noteIds: string[]): void;
   (e: 'drag-note', noteId: string): void;
   (e: 'batch-move-folder', payload: { noteIds: string[]; folderId: string | null }): void;
+  (e: 'update:showArchived', val: boolean): void;
 }>();
 
 const VIEW_MODE_KEY = 'sudu_note_view_mode';
@@ -39,7 +41,17 @@ const VIEW_MODE_KEY = 'sudu_note_view_mode';
 const searchInput = ref('');
 const searchQuery = ref('');
 const viewMode = ref<'grid' | 'list'>('grid');
-const showArchived = ref(false);
+const localShowArchived = ref(props.showArchived ?? false);
+watch(() => props.showArchived, (val) => {
+  if (val !== undefined) localShowArchived.value = val;
+});
+const showArchived = computed({
+  get: () => props.showArchived ?? localShowArchived.value,
+  set: (val) => {
+    localShowArchived.value = val;
+    emit('update:showArchived', val);
+  }
+});
 const isFilterMenuOpen = ref(false);
 const isDateMenuOpen = ref(false);
 
@@ -116,9 +128,15 @@ function toggleSelectMode() {
 }
 
 function toggleNoteSelection(id: string) {
+  if (!isSelectMode.value) {
+    isSelectMode.value = true;
+  }
   const idx = selectedNoteIds.value.indexOf(id);
   if (idx > -1) {
     selectedNoteIds.value.splice(idx, 1);
+    if (selectedNoteIds.value.length === 0) {
+      isSelectMode.value = false;
+    }
   } else {
     selectedNoteIds.value.push(id);
   }
@@ -254,15 +272,15 @@ function staggerClass(index: number): string {
     <!-- toolbar -->
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <!-- search & filter group -->
-      <div class="flex items-center gap-1.5 flex-1 max-w-md">
+      <div class="flex items-center gap-2 w-full flex-1 sm:max-w-md">
         <!-- search input -->
-        <div class="relative flex-1">
+        <div class="relative flex-1 min-w-0">
           <Search class="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 z-10" style="color: var(--text-muted);" />
           <input
             v-model="searchInput"
             type="text"
             placeholder="Search workspace notes..."
-            class="input-search text-xs font-mono"
+            class="input-search text-xs font-mono w-full"
             @keydown.esc="clearSearch"
           />
           <button
@@ -277,7 +295,7 @@ function staggerClass(index: number): string {
         </div>
 
         <!-- Frameless Filter Icon Button & Popover -->
-        <div class="relative filter-dropdown-container">
+        <div class="relative filter-dropdown-container shrink-0">
           <button
             type="button"
             class="h-9 w-9 relative rounded-lg flex items-center justify-center transition-all select-none shrink-0 cursor-pointer hover:bg-white/10"
@@ -318,7 +336,7 @@ function staggerClass(index: number): string {
         </div>
 
         <!-- Frameless Calendar Date Icon Button & Popover -->
-        <div class="relative date-dropdown-container">
+        <div class="relative date-dropdown-container shrink-0">
           <button
             type="button"
             class="h-9 w-9 relative rounded-lg flex items-center justify-center transition-all select-none shrink-0 cursor-pointer hover:bg-white/10"
@@ -354,9 +372,7 @@ function staggerClass(index: number): string {
       </div>
 
       <!-- actions -->
-      <div class="flex items-center gap-2 flex-wrap">
-
-
+      <div class="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
         <!-- view mode -->
         <div class="flex border rounded overflow-hidden h-[38px] shrink-0" style="border-color: var(--border);">
           <button
@@ -383,31 +399,34 @@ function staggerClass(index: number): string {
           </button>
         </div>
 
-        <!-- Select mode toggle -->
-        <PushButton
-          :variant="isSelectMode ? 'primary' : 'secondary'"
-          :title="isSelectMode ? 'Exit select mode' : 'Enter batch select mode'"
-          @click="toggleSelectMode"
-        >
-          <CheckSquare class="h-3.5 w-3.5" />
-          <span>Select</span>
-        </PushButton>
+        <!-- Desktop Action Buttons (Hidden on Mobile) -->
+        <div class="hidden sm:flex items-center gap-2">
+          <!-- Select mode toggle -->
+          <PushButton
+            :variant="isSelectMode ? 'primary' : 'secondary'"
+            :title="isSelectMode ? 'Exit select mode' : 'Enter batch select mode'"
+            @click="toggleSelectMode"
+          >
+            <CheckSquare class="h-3.5 w-3.5" />
+            <span>Select</span>
+          </PushButton>
 
-        <!-- show archived workspace switch -->
-        <PushButton
-          :variant="showArchived ? 'warning' : 'secondary'"
-          :title="showArchived ? 'View active workspace' : 'View archived notes'"
-          @click="showArchived = !showArchived"
-        >
-          <Archive class="h-3.5 w-3.5" />
-          Archive
-        </PushButton>
+          <!-- show archived workspace switch -->
+          <PushButton
+            :variant="showArchived ? 'warning' : 'secondary'"
+            :title="showArchived ? 'View active workspace' : 'View archived notes'"
+            @click="showArchived = !showArchived"
+          >
+            <Archive class="h-3.5 w-3.5" />
+            <span>Archive</span>
+          </PushButton>
 
-        <!-- new note -->
-        <PushButton variant="primary" @click="emit('create')">
-          <Plus class="h-3.5 w-3.5" />
-          New Note
-        </PushButton>
+          <!-- new note (desktop only) -->
+          <PushButton variant="primary" @click="emit('create')">
+            <Plus class="h-3.5 w-3.5" />
+            <span>New Note</span>
+          </PushButton>
+        </div>
       </div>
     </div>
 
@@ -509,7 +528,7 @@ function staggerClass(index: number): string {
         <p class="font-mono text-xs mt-1 mb-5" style="color: var(--text-muted); opacity: 0.6;">
           No active notes in "{{ activeFolderName || 'this folder' }}"
         </p>
-        <PushButton variant="primary" @click="emit('create')">
+        <PushButton variant="primary" class="hidden sm:inline-flex" @click="emit('create')">
           <Plus class="h-3.5 w-3.5" />
           New Note
         </PushButton>
@@ -531,7 +550,7 @@ function staggerClass(index: number): string {
         <p class="font-mono text-xs mt-1 mb-5" style="color: var(--text-muted); opacity: 0.6;">
           Create your first note to get started
         </p>
-        <PushButton variant="primary" @click="emit('create')">
+        <PushButton variant="primary" class="hidden sm:inline-flex" @click="emit('create')">
           <Plus class="h-3.5 w-3.5" />
           New Note
         </PushButton>
@@ -553,7 +572,7 @@ function staggerClass(index: number): string {
         <p class="font-mono text-xs mt-1 mb-5" style="color: var(--text-muted); opacity: 0.6;">
           Your active workspace notes are organized inside folders.
         </p>
-        <PushButton variant="primary" @click="emit('create')">
+        <PushButton variant="primary" class="hidden sm:inline-flex" @click="emit('create')">
           <Plus class="h-3.5 w-3.5" />
           New Note
         </PushButton>
@@ -576,7 +595,7 @@ function staggerClass(index: number): string {
           All existing notes are currently archived.
         </p>
         <div class="flex items-center gap-3">
-          <PushButton variant="primary" @click="emit('create')">
+          <PushButton variant="primary" class="hidden sm:inline-flex" @click="emit('create')">
             <Plus class="h-3.5 w-3.5" />
             New Note
           </PushButton>
@@ -611,7 +630,7 @@ function staggerClass(index: number): string {
     </template>
 
     <!-- render notes workspace (split pinned / unpinned) -->
-    <div v-else class="space-y-6">
+    <div v-else class="space-y-6 pb-20 sm:pb-6">
       <!-- ── pinned workspace ── -->
       <div v-if="pinnedNotes.length > 0 && !showArchived" class="space-y-3">
         <div class="flex items-center gap-2 border-b pb-2" style="border-color: var(--border-subtle);">
@@ -727,7 +746,7 @@ function staggerClass(index: number): string {
     <Transition name="warn-toast">
       <div
         v-if="isSelectMode && selectedNoteIds.length > 0"
-        class="fixed bottom-6 left-1/2 z-50 flex items-center gap-3 px-5 py-2.5 border rounded-xl shadow-2xl font-mono text-xs select-none"
+        class="fixed bottom-6 left-1/2 z-50 flex items-center gap-2 sm:gap-3 px-3.5 sm:px-5 py-2.5 border rounded-xl shadow-2xl font-mono text-xs select-none max-w-[calc(100vw-32px)] overflow-x-auto scrollbar-none"
         style="transform: translate(-50%, 0); background: var(--bg-surface); border-color: var(--accent); box-shadow: 0 12px 40px rgba(0,0,0,0.4);"
       >
         <div class="flex items-center gap-2 shrink-0" style="color: var(--accent-light);">
@@ -797,6 +816,18 @@ function staggerClass(index: number): string {
         </button>
       </div>
     </Transition>
+
+    <!-- Mobile Floating Action Button (FAB) for New Note -->
+    <div class="sm:hidden fixed bottom-14 right-4 z-40">
+      <PushButton
+        variant="primary"
+        class="!p-3.5 !rounded-xl shadow-2xl"
+        title="Create New Note"
+        @click="emit('create')"
+      >
+        <Plus class="h-6 w-6 stroke-[2.5]" />
+      </PushButton>
+    </div>
 
     <!-- Move to Folder Modal -->
     <Teleport to="body">
