@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // pushable button component — flat style, push physics on hover/click
 defineProps<{
-  variant?: 'primary' | 'danger' | 'warning';
+  variant?: 'primary' | 'secondary' | 'danger' | 'warning';
   type?: 'button' | 'submit' | 'reset';
   disabled?: boolean;
 }>();
@@ -59,6 +59,14 @@ defineEmits<{ (e: 'click'): void }>();
 .danger {
   background: hsl(0, 72%, 48%);
   box-shadow: 0 4px 0 hsl(0, 72%, 28%);
+}
+
+/* ─── secondary (neutral raised surface) ─── */
+.secondary {
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border);
+  color: var(--text-primary);
+  box-shadow: 0 4px 0 var(--border);
 }
 
 /* ─── warning (amber/orange) ─── */

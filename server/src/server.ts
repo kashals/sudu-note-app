@@ -32,14 +32,12 @@ app.use(express.json({ limit: '1mb' }));
 const createNoteSchema = z.object({
   title: z
     .string()
-    .trim()
-    .min(1, 'title cannot be empty')
-    .max(200, 'title too long (max 200 characters)'),
+    .max(200, 'title too long (max 200 characters)')
+    .default(''),
   content: z
     .string()
-    .trim()
-    .min(1, 'content cannot be empty')
-    .max(10000, 'content too long (max 10000 characters)'),
+    .max(10000, 'content too long (max 10000 characters)')
+    .default(''),
   category: z
     .string()
     .trim()
@@ -65,14 +63,12 @@ const createNoteSchema = z.object({
 const updateNoteSchema = z.object({
   title: z
     .string()
-    .trim()
-    .min(1, 'title cannot be empty')
-    .max(200, 'title too long (max 200 characters)'),
+    .max(200, 'title too long (max 200 characters)')
+    .optional(),
   content: z
     .string()
-    .trim()
-    .min(1, 'content cannot be empty')
-    .max(10000, 'content too long (max 10000 characters)'),
+    .max(10000, 'content too long (max 10000 characters)')
+    .optional(),
   category: z
     .string()
     .trim()

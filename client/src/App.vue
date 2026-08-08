@@ -6,6 +6,8 @@ import { getNotes, createNote, updateNote, deleteNote } from './services/api';
 import NoteList from './components/NoteList.vue';
 import NoteForm from './components/NoteForm.vue';
 import ConfirmModal from './components/ConfirmModal.vue';
+import { useToast } from './composables/useToast';
+import { useTheme } from './composables/useTheme';
 
 // ─── note state ──────────────────────────────────────────────
 const notes = ref<Note[]>([]);
@@ -25,18 +27,15 @@ const isArchiveModalOpen = ref(false);
 const noteToArchive = ref<Note | null>(null);
 const isArchiving = ref(false);
 
-// ─── feedback state ───────────────────────────────────────────
+// ─── feedback & theme composables ────────────────────────────
 const connectionError = ref<string | null>(null);
 const formError = ref<string | null>(null);
-const toastMessage = ref<string | null>(null);
-const toastType = ref<'success' | 'error'>('success');
+const { toastMessage, toastType, showToast, dismissToast } = useToast();
+const { isDark, toggleTheme, initTheme } = useTheme();
 
-// ─── agent + theme state ──────────────────────────────────────
+// ─── agent state ──────────────────────────────────────────────
 const agentStatus = ref<'idle' | 'syncing'>('idle');
-const isDark = ref(true);
 const isShortcutsOpen = ref(false);
-
-let toastTimer: ReturnType<typeof setTimeout> | null = null;
 let agentTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ─── breadcrumb ───────────────────────────────────────────────
@@ -60,31 +59,6 @@ function agentIdle(delay = 1400) {
   agentTimer = setTimeout(() => { agentStatus.value = 'idle'; }, delay);
 }
 
-// ─── theme ────────────────────────────────────────────────────
-function applyTheme(dark: boolean) {
-  dark
-    ? document.documentElement.classList.remove('light')
-    : document.documentElement.classList.add('light');
-}
-
-function toggleTheme() {
-  isDark.value = !isDark.value;
-  applyTheme(isDark.value);
-  localStorage.setItem('sudu_theme', isDark.value ? 'dark' : 'light');
-}
-
-// ─── toast ────────────────────────────────────────────────────
-function showToast(message: string, type: 'success' | 'error' = 'success') {
-  if (toastTimer) clearTimeout(toastTimer);
-  toastMessage.value = message;
-  toastType.value = type;
-  toastTimer = setTimeout(() => { toastMessage.value = null; }, 4000);
-}
-
-function dismissToast() {
-  if (toastTimer) clearTimeout(toastTimer);
-  toastMessage.value = null;
-}
 
 // ─── keyboard shortcuts ───────────────────────────────────────
 function handleGlobalKeydown(e: KeyboardEvent) {
@@ -440,6 +414,89 @@ async function handleRestoreNote(note: Note) {
   }
 }
 
+// ─── batch operations (optimistic) ─────────────────────────────
+async function handleBatchArchive(noteIds: string[]) {
+  if (noteIds.length === 0) return;
+  agentSync();
+  const originalNotes = [...notes.value];
+
+  notes.value = notes.value.map(n => noteIds.includes(n.id) ? { ...n, is_archived: 1, is_pinned: 0 } : n);
+  sortNotes();
+
+  try {
+    await Promise.all(noteIds.map(id => {
+      const target = originalNotes.find(n => n.id === id);
+      if (!target) return Promise.resolve();
+      return updateNote(String(id), {
+        title: target.title,
+        content: target.content,
+        category: target.category,
+        is_pinned: 0,
+        is_archived: 1,
+        tags: target.tags
+      });
+    }));
+    showToast(`${noteIds.length} notes moved to archive`);
+    agentIdle();
+  } catch (err: any) {
+    notes.value = originalNotes;
+    sortNotes();
+    showToast('Failed to archive notes', 'error');
+    agentIdle(0);
+  }
+}
+
+async function handleBatchRestore(noteIds: string[]) {
+  if (noteIds.length === 0) return;
+  agentSync();
+  const originalNotes = [...notes.value];
+
+  notes.value = notes.value.map(n => noteIds.includes(n.id) ? { ...n, is_archived: 0 } : n);
+  sortNotes();
+
+  try {
+    await Promise.all(noteIds.map(id => {
+      const target = originalNotes.find(n => n.id === id);
+      if (!target) return Promise.resolve();
+      return updateNote(String(id), {
+        title: target.title,
+        content: target.content,
+        category: target.category,
+        is_pinned: target.is_pinned,
+        is_archived: 0,
+        tags: target.tags
+      });
+    }));
+    showToast(`${noteIds.length} notes restored`);
+    agentIdle();
+  } catch (err: any) {
+    notes.value = originalNotes;
+    sortNotes();
+    showToast('Failed to restore notes', 'error');
+    agentIdle(0);
+  }
+}
+
+async function handleBatchDelete(noteIds: string[]) {
+  if (noteIds.length === 0) return;
+  agentSync();
+  const originalNotes = [...notes.value];
+
+  notes.value = notes.value.filter(n => !noteIds.includes(n.id));
+  sortNotes();
+
+  try {
+    await Promise.all(noteIds.map(id => deleteNote(String(id))));
+    showToast(`${noteIds.length} notes deleted permanently`);
+    agentIdle();
+  } catch (err: any) {
+    notes.value = originalNotes;
+    sortNotes();
+    showToast('Failed to delete notes', 'error');
+    agentIdle(0);
+  }
+}
+
 // ─── delete forever (optimistic) ──────────────────────────────
 function openDeleteModal(note: Note) {
   noteToDelete.value = note;
@@ -481,9 +538,7 @@ function dismissConnectionError() { connectionError.value = null; }
 
 // ─── lifecycle ────────────────────────────────────────────────
 onMounted(() => {
-  const saved = localStorage.getItem('sudu_theme');
-  isDark.value = saved !== 'light';
-  applyTheme(isDark.value);
+  initTheme();
   document.addEventListener('keydown', handleGlobalKeydown);
   fetchNotes();
 });
@@ -553,30 +608,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- system health / AI agent status in center -->
-        <div class="hidden md:flex items-center gap-2 font-mono text-[11px] px-3 py-1.5 border" style="background: var(--bg-raised); border-color: var(--border);">
-          <span class="relative flex h-1.5 w-1.5">
-            <span
-              v-if="agentStatus === 'syncing'"
-              class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-              style="background: var(--accent);"
-            ></span>
-            <span
-              class="relative inline-flex rounded-full h-1.5 w-1.5 transition-colors duration-300"
-              :style="agentStatus === 'syncing'
-                ? 'background: var(--accent);'
-                : 'background: var(--text-muted); opacity: 0.5;'"
-            ></span>
-          </span>
-          <Transition name="fade" mode="out-in">
-            <span
-              :key="agentStatus"
-              :style="agentStatus === 'syncing' ? 'color: var(--accent-light);' : 'color: var(--text-muted);'"
-            >
-              {{ agentStatus === 'syncing' ? 'AI Syncing...' : 'System Status: Active' }}
-            </span>
-          </Transition>
-        </div>
+
 
         <!-- right badges -->
         <div class="flex items-center gap-2 font-mono text-[11px]">
@@ -633,6 +665,9 @@ onUnmounted(() => {
         @archive="openArchiveModal"
         @restore="handleRestoreNote"
         @refresh="fetchNotes"
+        @batch-archive="handleBatchArchive"
+        @batch-restore="handleBatchRestore"
+        @batch-delete="handleBatchDelete"
       />
     </main>
 
