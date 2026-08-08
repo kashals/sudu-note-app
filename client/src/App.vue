@@ -339,12 +339,9 @@ async function handleFormSubmit(payload: CreateNoteDto) {
         ...payload,
         folder_id: activeFolderId.value
       });
-      const i = notes.value.findIndex((n) => n.id === tempId);
-      if (i !== -1) {
-        const updatedNotes = [...notes.value];
-        updatedNotes[i] = created;
-        notes.value = updatedNotes;
-      }
+      // Replace temp note cleanly and eliminate duplicate items during network latency
+      const cleanNotes = notes.value.filter((n) => n.id !== tempId && n.id !== created.id);
+      notes.value = [created, ...cleanNotes];
       // update sidebar count
       if (activeFolderId.value) updateFolderNoteCount(activeFolderId.value, 1);
       sortNotes();
