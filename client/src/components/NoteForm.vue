@@ -11,6 +11,9 @@ import NoteSidebar from './editor/NoteSidebar.vue';
 import UnsavedToast from './editor/UnsavedToast.vue';
 import { useAutoSave } from '../composables/useAutoSave';
 import { useEditor } from '../composables/useEditor';
+import { useFolderState } from '../composables/useFolderState';
+
+const { folders } = useFolderState();
 
 const props = defineProps<{
   isOpen: boolean;
@@ -47,6 +50,15 @@ const showUnsavedWarning = ref(false);
 const noteTags = ref<string[]>([]);
 const tagError = ref<string | null>(null);
 const editorRef = ref<HTMLDivElement | null>(null);
+
+const folderName = computed(() => {
+  const folderId = props.noteToEdit?.folder_id;
+  if (folderId) {
+    const f = folders.value.find(item => item.id === folderId);
+    return f ? f.name : null;
+  }
+  return null;
+});
 
 // Validation
 const isValid = computed(() => {
@@ -341,22 +353,29 @@ defineExpose({ requestClose });
               >
                 SuDu workspace
               </button>
-              <span>/</span>
-              <button
-                type="button"
-                class="hover:underline transition-colors cursor-pointer"
-                style="color: var(--accent-light);"
-                :title="`Return from ${category}`"
-                @click="requestClose()"
-              >
-                {{ category === '__custom__' ? (customCategoryValue || 'Custom') : category }}
-              </button>
+              
+              <template v-if="folderName">
+                <span>/</span>
+                <button
+                  type="button"
+                  class="hover:underline transition-colors cursor-pointer"
+                  style="color: var(--accent-light);"
+                  :title="`Return from ${folderName}`"
+                  @click="requestClose()"
+                >
+                  {{ folderName }}
+                </button>
+              </template>
+
               <span>/</span>
               <span class="truncate max-w-[200px]" style="color: var(--text-secondary);">{{ title || 'Untitled Note' }}</span>
             </div>
           </div>
           
           <div class="flex items-center gap-3">
+            <PushButton variant="secondary" @click="requestClose">
+              Cancel
+            </PushButton>
             <PushButton variant="primary" :disabled="!isValid" @click="handleSubmit">
               <Check class="w-3.5 h-3.5" />
               Save &amp; Close
