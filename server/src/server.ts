@@ -21,7 +21,7 @@ app.use(
   cors({
     origin: CORS_ORIGIN === '*' ? '*' : CORS_ORIGIN.split(','),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-ID', 'x-device-id']
   })
 );
 
@@ -72,6 +72,14 @@ function hashPin(pin: string): string {
   return crypto.createHash('sha256').update(pin).digest('hex');
 }
 
+function getDeviceId(req: Request): string {
+  const header = req.headers['x-device-id'];
+  if (typeof header === 'string' && header.trim().length > 0) {
+    return header.trim();
+  }
+  return 'default-device';
+}
+
 // ─── health ───────────────────────────────────────────────────────
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -80,11 +88,13 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // ─── notes ───────────────────────────────────────────────────────
 
 // fetch all notes
-app.get('/api/notes', async (_req: Request, res: Response, next: NextFunction) => {
+app.get('/api/notes', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const deviceId = getDeviceId(req);
     const db = await getDb();
     const notes = await db.all<Note[]>(
-      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, created_at, updated_at FROM notes ORDER BY is_pinned DESC, updated_at DESC'
+      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, created_at, updated_at FROM notes WHERE device_id = ? ORDER BY is_pinned DESC, updated_at DESC',
+      [deviceId]
     );
     const formatted = notes.map(n => ({
       ...n,
@@ -101,10 +111,11 @@ app.get('/api/notes', async (_req: Request, res: Response, next: NextFunction) =
 app.get('/api/notes/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const db = await getDb();
     const note = await db.get<Note>(
-      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, created_at, updated_at FROM notes WHERE id = ?',
-      [id]
+      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, created_at, updated_at FROM notes WHERE id = ? AND device_id = ?',
+      [id, deviceId]
     );
 
     if (!note) {
@@ -121,6 +132,7 @@ app.get('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
 // create note
 app.post('/api/notes', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const deviceId = getDeviceId(req);
     const parseResult = createNoteSchema.safeParse(req.body);
     if (!parseResult.success) {
       res.status(400).json({
@@ -138,8 +150,8 @@ app.post('/api/notes', async (req: Request, res: Response, next: NextFunction) =
 
     const db = await getDb();
     await db.run(
-      'INSERT INTO notes (id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, title, content, category, is_pinned, is_archived, tags, folder_id ?? null, processedIsLocked, processedPinHash, now, now]
+      'INSERT INTO notes (id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, device_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, title, content, category, is_pinned, is_archived, tags, folder_id ?? null, processedIsLocked, processedPinHash, deviceId, now, now]
     );
 
     const newNote: Note = {
@@ -162,6 +174,7 @@ app.post('/api/notes', async (req: Request, res: Response, next: NextFunction) =
 app.put('/api/notes/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const parseResult = updateNoteSchema.safeParse(req.body);
 
     if (!parseResult.success) {
@@ -174,8 +187,8 @@ app.put('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
 
     const db = await getDb();
     const existingNote = await db.get<Note>(
-      'SELECT id, category, is_pinned, is_archived, tags, folder_id, pin_hash FROM notes WHERE id = ?',
-      [id]
+      'SELECT id, category, is_pinned, is_archived, tags, folder_id, pin_hash FROM notes WHERE id = ? AND device_id = ?',
+      [id, deviceId]
     );
 
     if (!existingNote) {
@@ -197,13 +210,13 @@ app.put('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
     const now = new Date().toISOString();
 
     await db.run(
-      'UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), category = ?, is_pinned = ?, is_archived = ?, tags = ?, folder_id = ?, is_locked = ?, pin_hash = ?, updated_at = ? WHERE id = ?',
-      [title ?? null, content ?? null, finalCategory, finalIsPinned, finalIsArchived, finalTags, finalFolderId, finalIsLocked, finalPinHash, now, id]
+      'UPDATE notes SET title = COALESCE(?, title), content = COALESCE(?, content), category = ?, is_pinned = ?, is_archived = ?, tags = ?, folder_id = ?, is_locked = ?, pin_hash = ?, updated_at = ? WHERE id = ? AND device_id = ?',
+      [title ?? null, content ?? null, finalCategory, finalIsPinned, finalIsArchived, finalTags, finalFolderId, finalIsLocked, finalPinHash, now, id, deviceId]
     );
 
     const updatedNote = await db.get<Note>(
-      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, created_at, updated_at FROM notes WHERE id = ?',
-      [id]
+      'SELECT id, title, content, category, is_pinned, is_archived, tags, folder_id, is_locked, pin_hash, created_at, updated_at FROM notes WHERE id = ? AND device_id = ?',
+      [id, deviceId]
     );
 
     res.json({
@@ -220,13 +233,14 @@ app.put('/api/notes/:id', async (req: Request, res: Response, next: NextFunction
 app.post('/api/notes/:id/verify-pin', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const { pin } = req.body;
     if (!pin || typeof pin !== 'string') {
       res.status(400).json({ error: 'pin is required' });
       return;
     }
     const db = await getDb();
-    const note = await db.get<Note>('SELECT pin_hash FROM notes WHERE id = ?', [id]);
+    const note = await db.get<Note>('SELECT pin_hash FROM notes WHERE id = ? AND device_id = ?', [id, deviceId]);
     if (!note) {
       res.status(404).json({ error: 'note not found' });
       return;
@@ -246,15 +260,16 @@ app.post('/api/notes/:id/verify-pin', async (req: Request, res: Response, next: 
 app.delete('/api/notes/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const db = await getDb();
-    const existingNote = await db.get<Note>('SELECT id FROM notes WHERE id = ?', [id]);
+    const existingNote = await db.get<Note>('SELECT id FROM notes WHERE id = ? AND device_id = ?', [id, deviceId]);
 
     if (!existingNote) {
       res.status(404).json({ error: 'note not found' });
       return;
     }
 
-    await db.run('DELETE FROM notes WHERE id = ?', [id]);
+    await db.run('DELETE FROM notes WHERE id = ? AND device_id = ?', [id, deviceId]);
     res.status(200).json({ message: 'note deleted successfully', id });
   } catch (error) {
     next(error);
@@ -264,17 +279,19 @@ app.delete('/api/notes/:id', async (req: Request, res: Response, next: NextFunct
 // ─── folders ─────────────────────────────────────────────────────
 
 // fetch all folders with note counts
-app.get('/api/folders', async (_req: Request, res: Response, next: NextFunction) => {
+app.get('/api/folders', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const deviceId = getDeviceId(req);
     const db = await getDb();
     const folders = await db.all<(Folder & { note_count: number })[]>(`
       SELECT f.id, f.name, f.color, f.is_locked, f.pin_hash, f.created_at, f.updated_at,
              COUNT(n.id) as note_count
       FROM folders f
-      LEFT JOIN notes n ON n.folder_id = f.id AND n.is_archived = 0
+      LEFT JOIN notes n ON n.folder_id = f.id AND n.is_archived = 0 AND n.device_id = ?
+      WHERE f.device_id = ?
       GROUP BY f.id
       ORDER BY f.created_at ASC
-    `);
+    `, [deviceId, deviceId]);
     // never expose pin_hash to client
     const safe = folders.map(({ pin_hash, ...rest }) => ({
       ...rest,
@@ -289,6 +306,7 @@ app.get('/api/folders', async (_req: Request, res: Response, next: NextFunction)
 // create folder
 app.post('/api/folders', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const deviceId = getDeviceId(req);
     const parseResult = createFolderSchema.safeParse(req.body);
     if (!parseResult.success) {
       res.status(400).json({
@@ -305,8 +323,8 @@ app.post('/api/folders', async (req: Request, res: Response, next: NextFunction)
 
     const db = await getDb();
     await db.run(
-      'INSERT INTO folders (id, name, color, is_locked, pin_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, name, color, is_locked, storedHash, now, now]
+      'INSERT INTO folders (id, name, color, is_locked, pin_hash, device_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, name, color, is_locked, storedHash, deviceId, now, now]
     );
 
     res.status(201).json({
@@ -325,6 +343,7 @@ app.post('/api/folders', async (req: Request, res: Response, next: NextFunction)
 app.put('/api/folders/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const parseResult = updateFolderSchema.safeParse(req.body);
     if (!parseResult.success) {
       res.status(400).json({
@@ -335,7 +354,7 @@ app.put('/api/folders/:id', async (req: Request, res: Response, next: NextFuncti
     }
 
     const db = await getDb();
-    const existing = await db.get<Folder>('SELECT * FROM folders WHERE id = ?', [id]);
+    const existing = await db.get<Folder>('SELECT * FROM folders WHERE id = ? AND device_id = ?', [id, deviceId]);
     if (!existing) {
       res.status(404).json({ error: 'folder not found' });
       return;
@@ -345,7 +364,6 @@ app.put('/api/folders/:id', async (req: Request, res: Response, next: NextFuncti
     const finalName = name ?? existing.name;
     const finalColor = color ?? existing.color;
     const finalIsLocked = is_locked ?? existing.is_locked;
-    // If pin_hash provided it's the raw pin — hash it; if explicitly null, clear; otherwise keep existing
     const finalPinHash = pin_hash !== undefined
       ? (pin_hash === null ? null : hashPin(pin_hash))
       : existing.pin_hash;
@@ -353,13 +371,13 @@ app.put('/api/folders/:id', async (req: Request, res: Response, next: NextFuncti
     const now = new Date().toISOString();
 
     await db.run(
-      'UPDATE folders SET name = ?, color = ?, is_locked = ?, pin_hash = ?, updated_at = ? WHERE id = ?',
-      [finalName, finalColor, finalIsLocked, finalPinHash, now, id]
+      'UPDATE folders SET name = ?, color = ?, is_locked = ?, pin_hash = ?, updated_at = ? WHERE id = ? AND device_id = ?',
+      [finalName, finalColor, finalIsLocked, finalPinHash, now, id, deviceId]
     );
 
     const noteCount = await db.get<{ count: number }>(
-      'SELECT COUNT(*) as count FROM notes WHERE folder_id = ? AND is_archived = 0',
-      [id]
+      'SELECT COUNT(*) as count FROM notes WHERE folder_id = ? AND is_archived = 0 AND device_id = ?',
+      [id, deviceId]
     );
 
     res.json({
@@ -378,17 +396,18 @@ app.put('/api/folders/:id', async (req: Request, res: Response, next: NextFuncti
 app.delete('/api/folders/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const db = await getDb();
-    const existing = await db.get<Folder>('SELECT id FROM folders WHERE id = ?', [id]);
+    const existing = await db.get<Folder>('SELECT id FROM folders WHERE id = ? AND device_id = ?', [id, deviceId]);
     if (!existing) {
       res.status(404).json({ error: 'folder not found' });
       return;
     }
 
     // Delete all notes inside this folder
-    await db.run('DELETE FROM notes WHERE folder_id = ?', [id]);
+    await db.run('DELETE FROM notes WHERE folder_id = ? AND device_id = ?', [id, deviceId]);
     // Delete folder
-    await db.run('DELETE FROM folders WHERE id = ?', [id]);
+    await db.run('DELETE FROM folders WHERE id = ? AND device_id = ?', [id, deviceId]);
 
     res.json({ message: 'folder and its contents deleted successfully', id });
   } catch (error) {
@@ -400,6 +419,7 @@ app.delete('/api/folders/:id', async (req: Request, res: Response, next: NextFun
 app.post('/api/folders/:id/verify-pin', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const { pin } = req.body as { pin?: string };
 
     if (!pin || typeof pin !== 'string') {
@@ -408,7 +428,7 @@ app.post('/api/folders/:id/verify-pin', async (req: Request, res: Response, next
     }
 
     const db = await getDb();
-    const folder = await db.get<{ pin_hash: string | null }>('SELECT pin_hash FROM folders WHERE id = ?', [id]);
+    const folder = await db.get<{ pin_hash: string | null }>('SELECT pin_hash FROM folders WHERE id = ? AND device_id = ?', [id, deviceId]);
     if (!folder) {
       res.status(404).json({ error: 'folder not found' });
       return;
@@ -426,14 +446,14 @@ app.post('/api/folders/:id/verify-pin', async (req: Request, res: Response, next
   }
 });
 
-// ─── catch-all & error handler ────────────────────────────────────
 // ─── settings/security-question ───────────────────────────────────
 
 // check if security question is set
-app.get('/api/settings/security-question', async (_req: Request, res: Response, next: NextFunction) => {
+app.get('/api/settings/security-question', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const deviceId = getDeviceId(req);
     const db = await getDb();
-    const questionRow = await db.get<{ value: string }>('SELECT value FROM system_settings WHERE key = ?', ['security_question']);
+    const questionRow = await db.get<{ value: string }>('SELECT value FROM system_settings WHERE key = ? AND device_id = ?', ['security_question', deviceId]);
     
     if (!questionRow) {
       res.json({ configured: false });
@@ -449,6 +469,7 @@ app.get('/api/settings/security-question', async (_req: Request, res: Response, 
 // configure security question & answer
 app.post('/api/settings/security-question', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const deviceId = getDeviceId(req);
     const { question, answer } = req.body as { question?: string; answer?: string };
     
     if (!question || !answer || typeof question !== 'string' || typeof answer !== 'string') {
@@ -457,11 +478,14 @@ app.post('/api/settings/security-question', async (req: Request, res: Response, 
     }
 
     const cleanQuestion = question.trim();
-    const cleanAnswerHash = hashPin(answer.trim().toLowerCase()); // lowercase to make it match-friendly
+    const cleanAnswerHash = hashPin(answer.trim().toLowerCase());
 
     const db = await getDb();
-    await db.run('INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)', ['security_question', cleanQuestion]);
-    await db.run('INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)', ['security_answer_hash', cleanAnswerHash]);
+    await db.run('DELETE FROM system_settings WHERE key = ? AND device_id = ?', ['security_question', deviceId]);
+    await db.run('INSERT INTO system_settings (key, value, device_id) VALUES (?, ?, ?)', ['security_question', cleanQuestion, deviceId]);
+    
+    await db.run('DELETE FROM system_settings WHERE key = ? AND device_id = ?', ['security_answer_hash', deviceId]);
+    await db.run('INSERT INTO system_settings (key, value, device_id) VALUES (?, ?, ?)', ['security_answer_hash', cleanAnswerHash, deviceId]);
 
     res.json({ success: true });
   } catch (error) {
@@ -473,6 +497,7 @@ app.post('/api/settings/security-question', async (req: Request, res: Response, 
 app.post('/api/folders/:id/reset-pin', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const { answer } = req.body as { answer?: string };
 
     if (!answer || typeof answer !== 'string') {
@@ -481,7 +506,7 @@ app.post('/api/folders/:id/reset-pin', async (req: Request, res: Response, next:
     }
 
     const db = await getDb();
-    const storedAnswerHashRow = await db.get<{ value: string }>('SELECT value FROM system_settings WHERE key = ?', ['security_answer_hash']);
+    const storedAnswerHashRow = await db.get<{ value: string }>('SELECT value FROM system_settings WHERE key = ? AND device_id = ?', ['security_answer_hash', deviceId]);
     
     if (!storedAnswerHashRow) {
       res.status(400).json({ error: 'security question not configured' });
@@ -495,18 +520,16 @@ app.post('/api/folders/:id/reset-pin', async (req: Request, res: Response, next:
       return;
     }
 
-    // Verify folder exists
-    const folder = await db.get<{ id: string }>('SELECT id FROM folders WHERE id = ?', [id]);
+    const folder = await db.get<{ id: string }>('SELECT id FROM folders WHERE id = ? AND device_id = ?', [id, deviceId]);
     if (!folder) {
       res.status(404).json({ error: 'folder not found' });
       return;
     }
 
-    // Reset lock
     const now = new Date().toISOString();
     await db.run(
-      'UPDATE folders SET is_locked = 0, pin_hash = NULL, updated_at = ? WHERE id = ?',
-      [now, id]
+      'UPDATE folders SET is_locked = 0, pin_hash = NULL, updated_at = ? WHERE id = ? AND device_id = ?',
+      [now, id, deviceId]
     );
 
     res.json({ success: true });
@@ -519,6 +542,7 @@ app.post('/api/folders/:id/reset-pin', async (req: Request, res: Response, next:
 app.post('/api/notes/:id/reset-pin', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const deviceId = getDeviceId(req);
     const { answer } = req.body as { answer?: string };
 
     if (!answer || typeof answer !== 'string') {
@@ -527,7 +551,7 @@ app.post('/api/notes/:id/reset-pin', async (req: Request, res: Response, next: N
     }
 
     const db = await getDb();
-    const storedAnswerHashRow = await db.get<{ value: string }>('SELECT value FROM system_settings WHERE key = ?', ['security_answer_hash']);
+    const storedAnswerHashRow = await db.get<{ value: string }>('SELECT value FROM system_settings WHERE key = ? AND device_id = ?', ['security_answer_hash', deviceId]);
     
     if (!storedAnswerHashRow) {
       res.status(400).json({ error: 'security question not configured' });
@@ -541,18 +565,16 @@ app.post('/api/notes/:id/reset-pin', async (req: Request, res: Response, next: N
       return;
     }
 
-    // Verify note exists
-    const note = await db.get<{ id: string }>('SELECT id FROM notes WHERE id = ?', [id]);
+    const note = await db.get<{ id: string }>('SELECT id FROM notes WHERE id = ? AND device_id = ?', [id, deviceId]);
     if (!note) {
       res.status(404).json({ error: 'note not found' });
       return;
     }
 
-    // Reset lock
     const now = new Date().toISOString();
     await db.run(
-      'UPDATE notes SET is_locked = 0, pin_hash = NULL, updated_at = ? WHERE id = ?',
-      [now, id]
+      'UPDATE notes SET is_locked = 0, pin_hash = NULL, updated_at = ? WHERE id = ? AND device_id = ?',
+      [now, id, deviceId]
     );
 
     res.json({ success: true });

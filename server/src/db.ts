@@ -39,6 +39,7 @@ async function initSchema(db: Database): Promise<void> {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       content TEXT NOT NULL,
+      device_id TEXT NOT NULL DEFAULT 'default-device',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -52,6 +53,7 @@ async function initSchema(db: Database): Promise<void> {
       color TEXT NOT NULL DEFAULT '#3b82f6',
       is_locked INTEGER NOT NULL DEFAULT 0,
       pin_hash TEXT,
+      device_id TEXT NOT NULL DEFAULT 'default-device',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -106,11 +108,39 @@ async function initSchema(db: Database): Promise<void> {
     // column already exists
   }
 
+  // Add device_id column to notes if missing
+  try {
+    await db.exec("ALTER TABLE notes ADD COLUMN device_id TEXT DEFAULT 'default-device';");
+  } catch (err) {
+    // column already exists
+  }
+
+  // Add device_id column to folders if missing
+  try {
+    await db.exec("ALTER TABLE folders ADD COLUMN device_id TEXT DEFAULT 'default-device';");
+  } catch (err) {
+    // column already exists
+  }
+
   // System settings table
   await db.exec(`
     CREATE TABLE IF NOT EXISTS system_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      device_id TEXT NOT NULL DEFAULT 'default-device',
+      PRIMARY KEY (key, device_id)
     )
   `);
+
+  // Add device_id column to system_settings if missing
+  try {
+    await db.exec("ALTER TABLE system_settings ADD COLUMN device_id TEXT DEFAULT 'default-device';");
+  } catch (err) {
+    // column already exists
+  }
+
+  // Performance Indexes
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_notes_device ON notes(device_id);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_folders_device ON folders(device_id);");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_settings_device ON system_settings(device_id);");
 }

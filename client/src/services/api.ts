@@ -6,6 +6,18 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (
   typeof window !== 'undefined' ? '/api' : 'http://localhost:5000/api'
 );
 
+export function getDeviceId(): string {
+  if (typeof window === 'undefined') return 'server-side';
+  let deviceId = localStorage.getItem('sudu_device_id');
+  if (!deviceId) {
+    deviceId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'device_' + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('sudu_device_id', deviceId);
+  }
+  return deviceId;
+}
+
 // axios instance setup
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -13,6 +25,12 @@ const apiClient = axios.create({
     'Content-Type': 'application/json'
   },
   timeout: 10000
+});
+
+// request interceptor to attach X-Device-ID header
+apiClient.interceptors.request.use((config) => {
+  config.headers['X-Device-ID'] = getDeviceId();
+  return config;
 });
 
 // extract error message
