@@ -10,10 +10,10 @@
             </div>
             <div>
               <h2 class="modal-title">
-                {{ mode === 'setup' ? 'Security Question' : 'Security Recovery' }}
+                {{ mode === 'setup' ? 'Security Question' : (targetType === 'note' ? 'Reset Note Lock' : 'Reset Folder Lock') }}
               </h2>
               <p class="modal-subtitle">
-                {{ mode === 'setup' ? 'Set up recovery for locked folders & notes' : 'Answer your security question to reset PIN' }}
+                {{ mode === 'setup' ? 'Set up security question before choosing PIN' : (targetType === 'note' ? 'Answer your security question to remove note lock' : 'Answer your security question to remove folder lock') }}
               </p>
             </div>
             <button class="modal-close" @click="$emit('update:modelValue', false)" aria-label="Close">
@@ -75,7 +75,7 @@
               </PushButton>
               <PushButton variant="primary" type="submit" :disabled="isSubmitting || !isValid">
                 <Loader2 v-if="isSubmitting" class="w-3.5 h-3.5 animate-spin" />
-                <span>{{ mode === 'setup' ? 'Save & Continue' : 'Unlock & Reset PIN' }}</span>
+                <span>{{ mode === 'setup' ? 'Save & Continue' : 'Unlock & Reset Lock' }}</span>
               </PushButton>
             </div>
           </form>
@@ -89,21 +89,23 @@
 import { ref, computed, watch } from 'vue';
 import { ShieldQuestion, X, Loader2 } from '@lucide/vue';
 import PushButton from '../PushButton.vue';
-import { getSecurityQuestion, setSecurityQuestion, resetFolderPin } from '../../services/api';
+import { getSecurityQuestion, setSecurityQuestion, resetFolderPin, resetNotePin } from '../../services/api';
 
 const props = withDefaults(defineProps<{
   modelValue: boolean;
   mode?: 'setup' | 'reset';
-  folderId?: string | null;
+  targetType?: 'folder' | 'note';
+  targetId?: string | null;
 }>(), {
   mode: 'setup',
-  folderId: null
+  targetType: 'folder',
+  targetId: null
 });
 
 const emit = defineEmits<{
   (e: 'update:modelValue', val: boolean): void;
   (e: 'setup-complete'): void;
-  (e: 'reset-complete', folderId: string): void;
+  (e: 'reset-complete', payload: { targetType: 'folder' | 'note'; targetId: string }): void;
 }>();
 
 const presetQuestions = [
@@ -167,12 +169,15 @@ async function handleSubmit() {
       emit('setup-complete');
       emit('update:modelValue', false);
     } else {
-      if (!props.folderId) {
-        throw new Error('No target folder specified for reset.');
+      if (!props.targetId) {
+        throw new Error('No target specified for reset.');
       }
-      const success = await resetFolderPin(props.folderId, answer.value.trim());
+      const success = props.targetType === 'note'
+        ? await resetNotePin(props.targetId, answer.value.trim())
+        : await resetFolderPin(props.targetId, answer.value.trim());
+
       if (success) {
-        emit('reset-complete', props.folderId);
+        emit('reset-complete', { targetType: props.targetType, targetId: props.targetId });
         emit('update:modelValue', false);
       } else {
         hasError.value = true;

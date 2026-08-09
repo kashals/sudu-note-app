@@ -118,8 +118,8 @@
     <ConfirmModal
       :isOpen="showDeleteConfirm"
       title="Delete Folder"
-      :message="`Are you sure you want to delete '${deletingFolder?.name}'? Notes inside will be moved to All Notes.`"
-      confirm-label="Delete"
+      :message="`Are you sure you want to delete '${deletingFolder?.name}'? All notes inside this folder will be permanently deleted.`"
+      confirm-label="Delete Folder & Notes"
       confirm-variant="danger"
       @confirm="confirmDelete"
       @cancel="showDeleteConfirm = false"
@@ -136,7 +136,8 @@
     <SecurityQuestionModal
       v-model="showForgotConfirm"
       mode="reset"
-      :folder-id="forgotTargetFolder?.id ?? null"
+      target-type="folder"
+      :target-id="forgotTargetFolder?.id ?? null"
       @reset-complete="handleResetComplete"
     />
   </aside>
@@ -162,6 +163,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'move-note', noteId: string, folderId: string | null): void;
+  (e: 'folder-deleted', folderId: string): void;
   (e: 'update:isMobileOpen', val: boolean): void;
   (e: 'update:showArchived', val: boolean): void;
 }>();
@@ -270,16 +272,8 @@ async function handleFolderModalSubmit({ name, color }: { name: string; color: s
 
 // ── lock ──────────────────────────────────────────────────────────
 async function startLock(folder: Folder) {
-  const check = await checkSecurityQuestion();
-  if (!check.configured) {
-    pendingLockFolder.value = folder;
-    showSetupQuestionModal.value = true;
-    return;
-  }
-  // already configured, proceed to PIN setup modal
-  pinTargetFolder.value = folder;
-  pinMode.value = 'set';
-  showPinModal.value = true;
+  pendingLockFolder.value = folder;
+  showSetupQuestionModal.value = true;
 }
 
 async function handleRemoveLock(folder: Folder) {
@@ -351,8 +345,8 @@ async function handleForgotPin() {
   showForgotConfirm.value = true;
 }
 
-async function handleResetComplete(folderId: string) {
-  await unlockFolderPermanently(folderId);
+async function handleResetComplete(payload: { targetType: 'folder' | 'note'; targetId: string }) {
+  await unlockFolderPermanently(payload.targetId);
   showForgotConfirm.value = false;
   forgotTargetFolder.value = null;
 }
@@ -373,7 +367,9 @@ function handleDelete(folder: Folder) {
 
 async function confirmDelete() {
   if (!deletingFolder.value) return;
-  await removeFolder(deletingFolder.value.id);
+  const deletedId = deletingFolder.value.id;
+  await removeFolder(deletedId);
+  emit('folder-deleted', deletedId);
   showDeleteConfirm.value = false;
   deletingFolder.value = null;
 }

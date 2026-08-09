@@ -374,7 +374,7 @@ app.put('/api/folders/:id', async (req: Request, res: Response, next: NextFuncti
   }
 });
 
-// delete folder — moves notes back to "All Notes"
+// delete folder — deletes folder and all notes inside it
 app.delete('/api/folders/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
@@ -385,11 +385,12 @@ app.delete('/api/folders/:id', async (req: Request, res: Response, next: NextFun
       return;
     }
 
-    // Move notes back to unfoldered
-    await db.run('UPDATE notes SET folder_id = NULL WHERE folder_id = ?', [id]);
+    // Delete all notes inside this folder
+    await db.run('DELETE FROM notes WHERE folder_id = ?', [id]);
+    // Delete folder
     await db.run('DELETE FROM folders WHERE id = ?', [id]);
 
-    res.json({ message: 'folder deleted, notes moved to All Notes', id });
+    res.json({ message: 'folder and its contents deleted successfully', id });
   } catch (error) {
     next(error);
   }
@@ -505,6 +506,52 @@ app.post('/api/folders/:id/reset-pin', async (req: Request, res: Response, next:
     const now = new Date().toISOString();
     await db.run(
       'UPDATE folders SET is_locked = 0, pin_hash = NULL, updated_at = ? WHERE id = ?',
+      [now, id]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// reset note PIN via security question answer
+app.post('/api/notes/:id/reset-pin', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { answer } = req.body as { answer?: string };
+
+    if (!answer || typeof answer !== 'string') {
+      res.status(400).json({ error: 'answer required' });
+      return;
+    }
+
+    const db = await getDb();
+    const storedAnswerHashRow = await db.get<{ value: string }>('SELECT value FROM system_settings WHERE key = ?', ['security_answer_hash']);
+    
+    if (!storedAnswerHashRow) {
+      res.status(400).json({ error: 'security question not configured' });
+      return;
+    }
+
+    const incomingHash = hashPin(answer.trim().toLowerCase());
+    
+    if (incomingHash !== storedAnswerHashRow.value) {
+      res.json({ success: false, error: 'incorrect answer' });
+      return;
+    }
+
+    // Verify note exists
+    const note = await db.get<{ id: string }>('SELECT id FROM notes WHERE id = ?', [id]);
+    if (!note) {
+      res.status(404).json({ error: 'note not found' });
+      return;
+    }
+
+    // Reset lock
+    const now = new Date().toISOString();
+    await db.run(
+      'UPDATE notes SET is_locked = 0, pin_hash = NULL, updated_at = ? WHERE id = ?',
       [now, id]
     );
 

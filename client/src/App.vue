@@ -11,6 +11,7 @@ import { useToast } from './composables/useToast';
 import { useTheme } from './composables/useTheme';
 import { useFolderState } from './composables/useFolderState';
 import PinModal from './components/ui/PinModal.vue';
+import SecurityQuestionModal from './components/ui/SecurityQuestionModal.vue';
 import type { Folder } from './types/folder';
 
 // ─── note state ──────────────────────────────────────────────
@@ -81,8 +82,13 @@ const moveVerifiedFolderIds = ref<Set<string>>(new Set());
 const pendingMovePayload = ref<{ noteIdOrJson: string; targetFolderId: string | null } | null>(null);
 const unlockedNoteIds = ref<Set<string>>(new Set());
 const isNoteLockPinModalOpen = ref(false);
+const isNoteLockSetupModalOpen = ref(false);
+const isNoteLockResetModalOpen = ref(false);
+const noteLockResetTargetId = ref<string | null>(null);
 const noteLockPinMode = ref<'set' | 'verify'>('verify');
 const noteLockTarget = ref<Note | null>(null);
+const pendingDeleteTarget = ref<Note | null>(null);
+const pendingBatchDeleteIds = ref<string[] | null>(null);
 const movePinModalRef = ref<{ triggerError: () => void; reset: () => void } | null>(null);
 const noteLockPinModalRef = ref<{ triggerError: () => void; reset: () => void } | null>(null);
 
@@ -633,8 +639,21 @@ async function handleBatchDelete(noteIds: string[]) {
 
 // ─── delete forever (optimistic) ──────────────────────────────
 function openDeleteModal(note: Note) {
+  if (note.is_locked && !unlockedNoteIds.value.has(note.id)) {
+    noteLockTarget.value = note;
+    pendingDeleteTarget.value = note;
+    noteLockPinMode.value = 'verify';
+    isNoteLockPinModalOpen.value = true;
+    return;
+  }
   noteToDelete.value = note;
   isDeleteModalOpen.value = true;
+}
+
+function handleFolderDeleted(folderId: string) {
+  notes.value = notes.value.filter(n => n.folder_id !== folderId);
+  sortNotes();
+  showToast('Folder and all notes inside deleted');
 }
 
 async function handleConfirmDelete() {
@@ -687,6 +706,14 @@ async function handleConfirmDelete() {
 }
 
 function triggerBatchDelete(noteIds: string[]) {
+  const lockedNote = notes.value.find(n => noteIds.includes(n.id) && n.is_locked && !unlockedNoteIds.value.has(n.id));
+  if (lockedNote) {
+    noteLockTarget.value = lockedNote;
+    pendingBatchDeleteIds.value = noteIds;
+    noteLockPinMode.value = 'verify';
+    isNoteLockPinModalOpen.value = true;
+    return;
+  }
   batchNoteIds.value = noteIds;
   isBatchDelete.value = true;
   isDeleteModalOpen.value = true;
@@ -790,6 +817,24 @@ async function handleVerifyNotePin(pin: string) {
       isNoteLockPinModalOpen.value = false;
       const targetNote = noteLockTarget.value;
       noteLockTarget.value = null;
+
+      if (pendingDeleteTarget.value) {
+        const target = pendingDeleteTarget.value;
+        pendingDeleteTarget.value = null;
+        noteToDelete.value = target;
+        isDeleteModalOpen.value = true;
+        return;
+      }
+
+      if (pendingBatchDeleteIds.value) {
+        const ids = pendingBatchDeleteIds.value;
+        pendingBatchDeleteIds.value = null;
+        batchNoteIds.value = ids;
+        isBatchDelete.value = true;
+        isDeleteModalOpen.value = true;
+        return;
+      }
+
       noteToEdit.value = targetNote;
       isFormOpen.value = true;
     } else {
@@ -819,6 +864,49 @@ async function handleVerifyNotePin(pin: string) {
   }
 }
 
+function handleNoteLockSetupComplete() {
+  isNoteLockSetupModalOpen.value = false;
+  noteLockPinMode.value = 'set';
+  isNoteLockPinModalOpen.value = true;
+}
+
+function handleNoteForgotPin() {
+  const targetId = noteLockTarget.value?.id ?? (noteToEdit.value?.id ?? null);
+  noteLockResetTargetId.value = targetId;
+  isNoteLockPinModalOpen.value = false;
+  isNoteLockResetModalOpen.value = true;
+}
+
+async function handleNoteResetComplete(payload: { targetType: 'folder' | 'note'; targetId: string }) {
+  isNoteLockResetModalOpen.value = false;
+  const targetId = payload.targetId;
+  const note = notes.value.find(n => n.id === targetId);
+
+  if (note) {
+    try {
+      const updated = await updateNote(note.id, {
+        title: note.title,
+        content: note.content,
+        is_locked: 0,
+        pin_hash: null
+      });
+      const idx = notes.value.findIndex(n => n.id === note.id);
+      if (idx !== -1) notes.value[idx] = updated;
+
+      const newSet = new Set(unlockedNoteIds.value);
+      newSet.add(note.id);
+      unlockedNoteIds.value = newSet;
+
+      noteLockTarget.value = null;
+      noteToEdit.value = updated;
+      isFormOpen.value = true;
+      showToast('Note lock removed via security question');
+    } catch {
+      showToast('Failed to reset note lock', 'error');
+    }
+  }
+}
+
 async function handleToggleNoteLock() {
   if (!noteToEdit.value) return;
   if (noteToEdit.value.is_locked) {
@@ -839,8 +927,8 @@ async function handleToggleNoteLock() {
       showToast('Failed to unlock note', 'error');
     }
   } else {
-    noteLockPinMode.value = 'set';
-    isNoteLockPinModalOpen.value = true;
+    // Open Security Question setup modal FIRST before PIN setup modal!
+    isNoteLockSetupModalOpen.value = true;
   }
 }
 
@@ -1057,6 +1145,7 @@ onUnmounted(() => {
         v-model:is-mobile-open="isMobileSidebarOpen"
         v-model:show-archived="showArchived"
         @move-note="handleMoveNote"
+        @folder-deleted="handleFolderDeleted"
       />
       <!-- Note list area -->
       <div class="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-7 pb-20 sm:pb-7 flex flex-col">
@@ -1222,7 +1311,24 @@ onUnmounted(() => {
       v-model="isNoteLockPinModalOpen"
       :mode="noteLockPinMode"
       @confirm="handleVerifyNotePin"
+      @forgot-pin="handleNoteForgotPin"
       @cancel="isNoteLockPinModalOpen = false; noteLockTarget = null;"
+    />
+
+    <!-- Security question setup modal for notes -->
+    <SecurityQuestionModal
+      v-model="isNoteLockSetupModalOpen"
+      mode="setup"
+      @setup-complete="handleNoteLockSetupComplete"
+    />
+
+    <!-- Security question reset recovery modal for notes -->
+    <SecurityQuestionModal
+      v-model="isNoteLockResetModalOpen"
+      mode="reset"
+      target-type="note"
+      :target-id="noteLockResetTargetId"
+      @reset-complete="handleNoteResetComplete"
     />
   </div>
 </template>

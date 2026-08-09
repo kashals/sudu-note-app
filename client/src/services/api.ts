@@ -167,3 +167,12 @@ export async function resetFolderPin(id: string, answer: string): Promise<boolea
     throw formatError(error);
   }
 }
+
+export async function resetNotePin(id: string, answer: string): Promise<boolean> {
+  try {
+    const response = await apiClient.post<{ success: boolean }>(`/notes/${id}/reset-pin`, { answer });
+    return response.data.success;
+  } catch (error) {
+    throw formatError(error);
+  }
+}
