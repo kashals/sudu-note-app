@@ -451,9 +451,9 @@ function staggerClass(index: number): string {
       >
         <div
           class="mb-4 p-4 border"
-          style="background: var(--bg-raised); border-color: var(--border); border-radius: 12px;"
+          style="background: var(--accent-glow); border-color: var(--accent); border-radius: 12px;"
         >
-          <Archive class="h-7 w-7" style="color: var(--text-muted);" />
+          <Archive class="h-7 w-7" style="color: var(--accent);" />
         </div>
         <p class="font-mono text-sm" style="color: var(--text-muted);">// Archive is empty</p>
         <p class="font-mono text-xs mt-1" style="color: var(--text-muted); opacity: 0.6;">
@@ -495,7 +495,7 @@ function staggerClass(index: number): string {
           class="mb-4 p-4 border"
           style="background: var(--accent-glow); border-color: var(--accent); border-radius: 12px;"
         >
-          <FileText class="h-7 w-7" style="color: var(--accent);" />
+          <Folder class="h-7 w-7" style="color: var(--accent);" />
         </div>
         <p class="font-mono text-sm" style="color: var(--text-muted);">// Folder is empty</p>
         <p class="font-mono text-xs mt-1 mb-5" style="color: var(--text-muted); opacity: 0.6;">
@@ -559,9 +559,9 @@ function staggerClass(index: number): string {
       >
         <div
           class="mb-4 p-4 border"
-          style="background: var(--bg-raised); border-color: var(--border); border-radius: 12px;"
+          style="background: var(--accent-glow); border-color: var(--accent); border-radius: 12px;"
         >
-          <Archive class="h-7 w-7" style="color: #fb923c;" />
+          <Archive class="h-7 w-7" style="color: var(--accent);" />
         </div>
         <p class="font-mono text-sm" style="color: var(--text-muted);">// No active workspace notes</p>
         <p class="font-mono text-xs mt-1 mb-5" style="color: var(--text-muted); opacity: 0.6;">
