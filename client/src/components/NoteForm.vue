@@ -98,18 +98,50 @@ const {
   autoSave,
   autoSaveStatus,
   isDirty,
-  markDirty,
-  resetDirty,
+  markDirty: rawMarkDirty,
+  resetDirty: rawResetDirty,
   toggleAutoSave,
   triggerAutoSave,
+  flushAutoSave,
   cleanupAutoSave
 } = useAutoSave(
   toRef(props, 'isOpen'),
   () => props.noteToEdit?.id,
   isValid,
   toRef(props, 'isSubmitting'),
-  (payload) => emit('autosave', payload)
+  (payload) => {
+    clearDraftFromStorage();
+    emit('autosave', payload);
+  }
 );
+
+function markDirty() {
+  rawMarkDirty();
+  saveDraftToStorage();
+}
+
+function resetDirty() {
+  rawResetDirty();
+  clearDraftFromStorage();
+}
+
+function saveDraftToStorage() {
+  if (!props.noteToEdit) {
+    localStorage.setItem('sudu_new_note_draft', JSON.stringify({
+      title: title.value,
+      content: content.value,
+      category: category.value,
+      isCustomCategory: isCustomCategory.value,
+      customCategoryValue: customCategoryValue.value,
+      isPinned: isPinned.value,
+      tags: noteTags.value
+    }));
+  }
+}
+
+function clearDraftFromStorage() {
+  localStorage.removeItem('sudu_new_note_draft');
+}
 
 // Unsaved changes request close helper
 function requestClose() {
@@ -216,31 +248,67 @@ function toggleQuickTag(tag: string) {
 // Reset or populate state cleanly when opening or changing target note
 function resetOrPopulateForm() {
   const newNote = props.noteToEdit;
-  title.value = newNote?.title ?? '';
-  content.value = newNote?.content ?? '';
-  isPinned.value = newNote?.is_pinned === 1;
+  if (!newNote) {
+    const savedDraft = localStorage.getItem('sudu_new_note_draft');
+    if (savedDraft) {
+      try {
+        const parsed = JSON.parse(savedDraft);
+        if (parsed.title || parsed.content) {
+          title.value = parsed.title || '';
+          content.value = parsed.content || '';
+          category.value = parsed.category || 'Personal';
+          isCustomCategory.value = Boolean(parsed.isCustomCategory);
+          customCategoryValue.value = parsed.customCategoryValue || '';
+          isPinned.value = Boolean(parsed.isPinned);
+          noteTags.value = Array.isArray(parsed.tags) ? parsed.tags : [];
+        } else {
+          title.value = '';
+          content.value = '';
+          isPinned.value = false;
+          noteTags.value = [];
+        }
+      } catch {
+        clearDraftFromStorage();
+        title.value = '';
+        content.value = '';
+        isPinned.value = false;
+        noteTags.value = [];
+      }
+    } else {
+      title.value = '';
+      content.value = '';
+      isPinned.value = false;
+      noteTags.value = [];
+    }
+  } else {
+    title.value = newNote.title ?? '';
+    content.value = newNote.content ?? '';
+    isPinned.value = newNote.is_pinned === 1;
+    try {
+      noteTags.value = JSON.parse(newNote.tags || '[]');
+    } catch {
+      noteTags.value = [];
+    }
+  }
+
   touchedTitle.value = false;
   touchedContent.value = false;
-
-  try {
-    noteTags.value = JSON.parse(newNote?.tags || '[]');
-  } catch {
-    noteTags.value = [];
-  }
   tagError.value = null;
 
-  const catVal = newNote?.category ?? 'Personal';
+  const catVal = newNote?.category ?? category.value ?? 'Personal';
   if (catVal && !baseCategories.includes(catVal) && newNote) {
     category.value = '__custom__';
     customCategoryValue.value = catVal;
     isCustomCategory.value = true;
+  } else if (!newNote && isCustomCategory.value) {
+    // Keep custom category if present
   } else {
     category.value = catVal;
     customCategoryValue.value = '';
     isCustomCategory.value = false;
   }
   showSidebar.value = false;
-  resetDirty();
+  rawResetDirty();
 
   nextTick(() => {
     if (editorRef.value) {
@@ -288,12 +356,22 @@ function closeDropdownOnOutsideClick(e: MouseEvent) {
   }
 }
 
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+  if (isDirty.value) {
+    flushAutoSave(getFormData);
+    e.preventDefault();
+    e.returnValue = '';
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', closeDropdownOnOutsideClick);
+  window.addEventListener('beforeunload', handleBeforeUnload);
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', closeDropdownOnOutsideClick);
+  window.removeEventListener('beforeunload', handleBeforeUnload);
   cleanupAutoSave();
 });
 

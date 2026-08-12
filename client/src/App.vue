@@ -347,37 +347,53 @@ async function handleFormSubmit(payload: CreateNoteDto) {
 
 // ─── auto-save (silent, no close) ────────────────────────────
 async function handleAutoSave(payload: CreateNoteDto) {
-  if (!noteToEdit.value) return;
-  const targetId = noteToEdit.value.id;
-  const index = notes.value.findIndex((n) => n.id === targetId);
-  if (index === -1) return;
-
-  // Optimistically update the in-memory list without closing form
-  const currentNote = notes.value[index] as Note;
-  const updatedNotes = [...notes.value];
-  updatedNotes[index] = {
-    ...currentNote,
-    title: payload.title,
-    content: payload.content,
-    category: payload.category ?? currentNote.category,
-    is_pinned: payload.is_pinned ?? currentNote.is_pinned,
-    is_archived: payload.is_archived ?? currentNote.is_archived,
-    tags: payload.tags ?? currentNote.tags,
-    updated_at: new Date().toISOString(),
-  } as Note;
-  notes.value = updatedNotes;
-
-  try {
-    const updated = await updateNote(targetId, payload);
-    const i = notes.value.findIndex((n) => n.id === updated.id);
-    if (i !== -1) {
-      const fresh = [...notes.value];
-      fresh[i] = updated;
-      notes.value = fresh;
+  if (noteToEdit.value) {
+    const targetId = noteToEdit.value.id;
+    const index = notes.value.findIndex((n) => n.id === targetId);
+    if (index !== -1) {
+      const currentNote = notes.value[index] as Note;
+      const updatedNotes = [...notes.value];
+      updatedNotes[index] = {
+        ...currentNote,
+        title: payload.title,
+        content: payload.content,
+        category: payload.category ?? currentNote.category,
+        is_pinned: payload.is_pinned ?? currentNote.is_pinned,
+        is_archived: payload.is_archived ?? currentNote.is_archived,
+        tags: payload.tags ?? currentNote.tags,
+        updated_at: new Date().toISOString(),
+      } as Note;
+      notes.value = updatedNotes;
     }
-    sortNotes();
-  } catch {
-    // Silent failure — user can still manually save
+
+    try {
+      const updated = await updateNote(targetId, payload);
+      const i = notes.value.findIndex((n) => n.id === updated.id);
+      if (i !== -1) {
+        const fresh = [...notes.value];
+        fresh[i] = updated;
+        notes.value = fresh;
+      }
+      sortNotes();
+    } catch {
+      // Silent failure — user can still manually save
+    }
+  } else {
+    // Automatically create new note draft on server
+    if (activeFolderId.value) {
+      payload.folder_id = activeFolderId.value;
+    }
+    try {
+      const created = await createNote(payload);
+      noteToEdit.value = created;
+      notes.value = [created, ...notes.value];
+      sortNotes();
+      if (created.folder_id && created.is_archived === 0) {
+        updateFolderNoteCount(created.folder_id, 1);
+      }
+    } catch {
+      // Silent failure
+    }
   }
 }
 

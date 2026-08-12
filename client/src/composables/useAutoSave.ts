@@ -38,11 +38,10 @@ export function useAutoSave(
 
   function triggerAutoSave(getData: () => CreateNoteDto) {
     if (!autoSave.value || !isOpen.value) return;
-    if (!noteToEditId()) return;
     if (!isDirty.value) return;
 
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(() => doAutoSave(getData), 3000);
+    autoSaveTimer = setTimeout(() => doAutoSave(getData), 1200);
   }
 
   function doAutoSave(getData: () => CreateNoteDto) {
@@ -59,6 +58,16 @@ export function useAutoSave(
     setTimeout(() => { autoSaveStatus.value = 'idle'; }, 2400);
   }
 
+  function flushAutoSave(getData: () => CreateNoteDto) {
+    if (autoSaveTimer) {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = null;
+    }
+    if (isDirty.value && isValid.value && !isSubmitting.value) {
+      doAutoSave(getData);
+    }
+  }
+
   function cleanupAutoSave() {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
   }
@@ -71,6 +80,7 @@ export function useAutoSave(
     resetDirty,
     toggleAutoSave,
     triggerAutoSave,
+    flushAutoSave,
     cleanupAutoSave
   };
 }
